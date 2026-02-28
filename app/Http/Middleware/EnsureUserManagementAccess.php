@@ -24,15 +24,18 @@ class EnsureUserManagementAccess
         }
 
         // Tenant admin: puede gestionar usuarios solo dentro de su condominio activo.
-        $isTenantAdmin = $user->roles()->where('name', 'admin_condominio')->exists();
+        $isTenantAdmin = $user->roles()->whereIn('name', [
+            'Administrador Propiedad',
+            'administrador_propiedad',
+            'admin_condominio',
+        ])->exists();
 
         if (! $isTenantAdmin) {
             return response()->json([
-                'message' => 'Acceso denegado. Requiere super_admin o admin_condominio.',
+                'message' => 'Acceso denegado. Requiere Super Usuario o Administrador Propiedad.',
             ], 403);
         }
 
         return $next($request);
     }
 }
-

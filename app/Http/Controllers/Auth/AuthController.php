@@ -72,7 +72,7 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'full_name' => $user->full_name,
                 'email' => $user->email,
-                'role' => 'super_admin',
+                'role' => 'Super Usuario',
                 'condominium_id' => null,
             ]);
         }

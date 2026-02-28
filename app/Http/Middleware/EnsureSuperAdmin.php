@@ -20,7 +20,7 @@ class EnsureSuperAdmin
 
         if (! $user->is_platform_admin) {
             return response()->json([
-                'message' => 'Acceso denegado. Requiere super administrador de plataforma.',
+                'message' => 'Acceso denegado. Requiere super usuario de plataforma.',
             ], 403);
         }
 

@@ -16,8 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class OperativeController extends Controller
 {
-    private const ALWAYS_BLOCKED_ROLE_NAMES = ['super_admin'];
-    private const TENANT_BLOCKED_ADMIN_ROLE_NAMES = ['admin_condominio'];
+    private const ALWAYS_BLOCKED_ROLE_NAMES = ['Super Usuario', 'super_usuario', 'super_admin'];
+    private const TENANT_BLOCKED_ADMIN_ROLE_NAMES = ['Administrador Propiedad', 'administrador_propiedad', 'admin_condominio'];
 
     public function index(Request $request): JsonResponse
     {

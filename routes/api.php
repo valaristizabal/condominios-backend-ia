@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Core\ApartmentController;
 use App\Http\Controllers\Core\CondominiumController;
 use App\Http\Controllers\Core\DashboardController;
 use App\Http\Controllers\Core\OperativeController;
@@ -16,7 +17,7 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
 });
 
-Route::middleware(['auth:api', 'super_admin'])->group(function () {
+Route::middleware(['auth:api', 'super_usuario'])->group(function () {
     Route::get('/condominiums', [CondominiumController::class, 'index']);
     Route::post('/condominiums', [CondominiumController::class, 'store']);
     Route::put('/condominiums/{id}', [CondominiumController::class, 'update']);
@@ -44,4 +45,9 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::post('/unit-types', [UnitTypeController::class, 'store']);
     Route::put('/unit-types/{id}', [UnitTypeController::class, 'update']);
     Route::patch('/unit-types/{id}/toggle', [UnitTypeController::class, 'toggle']);
+
+    Route::get('/apartments', [ApartmentController::class, 'index']);
+    Route::post('/apartments', [ApartmentController::class, 'store']);
+    Route::put('/apartments/{id}', [ApartmentController::class, 'update']);
+    Route::patch('/apartments/{id}/toggle', [ApartmentController::class, 'toggle']);
 });

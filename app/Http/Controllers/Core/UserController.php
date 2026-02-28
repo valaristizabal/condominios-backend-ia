@@ -56,9 +56,9 @@ class UserController extends Controller
 
         $role = Role::query()->findOrFail($validated['role_id']);
 
-        if ($role->name === 'super_admin') {
+        if (in_array($role->name, ['Super Usuario', 'super_usuario', 'super_admin'], true)) {
             throw ValidationException::withMessages([
-                'role_id' => ['No se permite asignar role super_admin desde este endpoint.'],
+                'role_id' => ['No se permite asignar role Super Usuario desde este endpoint.'],
             ]);
         }
 
@@ -110,4 +110,3 @@ class UserController extends Controller
         );
     }
 }
-

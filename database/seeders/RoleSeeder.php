@@ -11,8 +11,8 @@ class RoleSeeder extends Seeder
     {
         $roles = [
             [
-                'name' => 'admin_condominio',
-                'description' => 'Administrador tenant del condominio.',
+                'name' => 'Administrador Propiedad',
+                'description' => 'Administrador del conjunto o propiedad.',
             ],
             [
                 'name' => 'Seguridad',

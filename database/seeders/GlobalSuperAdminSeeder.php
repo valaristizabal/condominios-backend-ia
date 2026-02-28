@@ -13,9 +13,9 @@ class GlobalSuperAdminSeeder extends Seeder
     public function run(): void
     {
         Role::query()->updateOrCreate(
-            ['name' => 'super_admin'],
+            ['name' => 'Super Usuario'],
             [
-                'description' => 'Super administrador global sin condominio asignado.',
+                'description' => 'Super usuario global sin condominio asignado.',
                 'is_active' => true,
             ]
         );
