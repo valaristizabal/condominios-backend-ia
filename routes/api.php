@@ -9,6 +9,9 @@ use App\Http\Controllers\Core\ResidentController;
 use App\Http\Controllers\Core\UnitTypeController;
 use App\Http\Controllers\Core\UserController;
 use App\Http\Controllers\Core\VisitController;
+use App\Http\Controllers\Core\VehicleController;
+use App\Http\Controllers\Core\VehicleEntryController;
+use App\Http\Controllers\Core\VehicleTypeController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -55,4 +58,18 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::get('/visits', [VisitController::class, 'index']);
     Route::post('/visits', [VisitController::class, 'store']);
     Route::patch('/visits/{id}/checkout', [VisitController::class, 'checkout']);
+
+    Route::get('/vehicle-types', [VehicleTypeController::class, 'index']);
+    Route::post('/vehicle-types', [VehicleTypeController::class, 'store']);
+    Route::put('/vehicle-types/{id}', [VehicleTypeController::class, 'update']);
+    Route::patch('/vehicle-types/{id}/toggle', [VehicleTypeController::class, 'toggle']);
+
+    Route::get('/vehicles', [VehicleController::class, 'index']);
+    Route::post('/vehicles', [VehicleController::class, 'store']);
+    Route::put('/vehicles/{id}', [VehicleController::class, 'update']);
+    Route::patch('/vehicles/{id}/toggle', [VehicleController::class, 'toggle']);
+
+    Route::get('/vehicle-entries', [VehicleEntryController::class, 'index']);
+    Route::post('/vehicle-entries', [VehicleEntryController::class, 'store']);
+    Route::patch('/vehicle-entries/{id}/checkout', [VehicleEntryController::class, 'checkout']);
 });

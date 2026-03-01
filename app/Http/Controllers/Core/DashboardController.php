@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Core;
 use App\Http\Controllers\Controller;
 use App\Models\Operative;
 use App\Models\Resident;
+use App\Models\Visit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class DashboardController extends Controller
 {
+    private const VISIT_STATUS_INSIDE = 'INSIDE';
+
     public function summary(Request $request): JsonResponse
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
@@ -24,9 +27,15 @@ class DashboardController extends Controller
             ->whereHas('apartment', fn ($q) => $q->where('condominium_id', $activeCondominiumId))
             ->count();
 
+        $visitorsInsideCount = Visit::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('status', self::VISIT_STATUS_INSIDE)
+            ->count();
+
         return response()->json([
             'operatives_count' => $operativesCount,
             'residents_count' => $residentsCount,
+            'visitors_inside_count' => $visitorsInsideCount,
         ]);
     }
 
@@ -52,4 +61,3 @@ class DashboardController extends Controller
         }
     }
 }
-
