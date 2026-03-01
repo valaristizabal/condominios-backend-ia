@@ -11,6 +11,7 @@ use App\Http\Controllers\Core\UserController;
 use App\Http\Controllers\Core\VisitController;
 use App\Http\Controllers\Core\VehicleController;
 use App\Http\Controllers\Core\VehicleEntryController;
+use App\Http\Controllers\Core\VehicleIncidentController;
 use App\Http\Controllers\Core\VehicleTypeController;
 use Illuminate\Support\Facades\Route;
 
@@ -72,4 +73,8 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::get('/vehicle-entries', [VehicleEntryController::class, 'index']);
     Route::post('/vehicle-entries', [VehicleEntryController::class, 'store']);
     Route::patch('/vehicle-entries/{id}/checkout', [VehicleEntryController::class, 'checkout']);
+
+    Route::get('/vehicle-incidents', [VehicleIncidentController::class, 'index']);
+    Route::post('/vehicle-incidents', [VehicleIncidentController::class, 'store']);
+    Route::patch('/vehicle-incidents/{id}/resolve', [VehicleIncidentController::class, 'resolve']);
 });
