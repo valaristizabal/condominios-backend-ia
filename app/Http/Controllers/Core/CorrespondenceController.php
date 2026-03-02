@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Core;
 use App\Http\Controllers\Controller;
 use App\Models\Apartment;
 use App\Models\Correspondence;
+use App\Models\Resident;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class CorrespondenceController extends Controller
@@ -22,24 +24,30 @@ class CorrespondenceController extends Controller
             ->with([
                 'apartment.unitType:id,name',
                 'receivedBy:id,full_name,email,document_number',
+                'residentReceiver:id,user_id,apartment_id,type,is_active',
+                'residentReceiver.user:id,full_name,email,document_number',
                 'deliveredBy:id,full_name,email,document_number',
             ])
             ->where('condominium_id', $activeCondominiumId)
             ->orderByDesc('id')
             ->get();
 
-        return response()->json($items);
+        return response()->json(
+            $items->map(fn (Correspondence $item) => $this->present($item))
+        );
     }
 
     public function store(Request $request): JsonResponse
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
         $this->rejectForbiddenFieldsFromRequest($request);
+        $this->rejectCreateForbiddenFieldsFromRequest($request);
 
         $validated = $request->validate([
             'courier_company' => ['required', 'string', 'max:255'],
-            'package_type' => ['required', 'string', 'max:255'],
-            'evidence_photo' => ['nullable', 'image', 'max:5120'],
+            'package_type' => ['required', 'string', Rule::in(['documento', 'paquete'])],
+            'evidence_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'digital_signature' => ['nullable', 'string'],
             'apartment_id' => ['required', 'integer', 'exists:apartments,id'],
         ]);
 
@@ -58,18 +66,22 @@ class CorrespondenceController extends Controller
             'courier_company' => $validated['courier_company'],
             'package_type' => $validated['package_type'],
             'evidence_photo' => $evidencePhotoPath,
-            'delivered' => false,
+            'digital_signature' => ! empty($validated['digital_signature'])
+                ? $this->storeDigitalSignatureIfBase64((string) $validated['digital_signature'], $activeCondominiumId)
+                : null,
+            'status' => Correspondence::STATUS_RECEIVED,
             'received_by_id' => $request->user()?->id,
         ]);
 
-        return response()->json(
-            $item->fresh()->load([
-                'apartment.unitType:id,name',
-                'receivedBy:id,full_name,email,document_number',
-                'deliveredBy:id,full_name,email,document_number',
-            ]),
-            201
-        );
+        $freshItem = $item->fresh()->load([
+            'apartment.unitType:id,name',
+            'receivedBy:id,full_name,email,document_number',
+            'residentReceiver:id,user_id,apartment_id,type,is_active',
+            'residentReceiver.user:id,full_name,email,document_number',
+            'deliveredBy:id,full_name,email,document_number',
+        ]);
+
+        return response()->json($this->present($freshItem), 201);
     }
 
     public function deliver(Request $request, int $id): JsonResponse
@@ -79,6 +91,7 @@ class CorrespondenceController extends Controller
 
         $validated = $request->validate([
             'digital_signature' => ['required', 'string'],
+            'resident_receiver_id' => ['required', 'integer', 'exists:residents,id'],
         ]);
 
         $item = Correspondence::query()
@@ -86,24 +99,45 @@ class CorrespondenceController extends Controller
             ->where('id', $id)
             ->firstOrFail();
 
+        if ($item->status === Correspondence::STATUS_DELIVERED) {
+            return response()->json([
+                'message' => 'La correspondencia ya fue entregada.',
+            ], 400);
+        }
+
+        if ($item->status !== Correspondence::STATUS_RECEIVED) {
+            return response()->json([
+                'message' => 'La correspondencia no se encuentra en estado RECEIVED_BY_SECURITY.',
+            ], 400);
+        }
+
         $digitalSignature = $this->storeDigitalSignatureIfBase64(
             (string) $validated['digital_signature'],
             $activeCondominiumId
         );
 
+        $resident = $this->resolveResidentInActiveCondominium(
+            (int) $validated['resident_receiver_id'],
+            $activeCondominiumId
+        );
+
         $item->update([
-            'delivered' => true,
+            'status' => Correspondence::STATUS_DELIVERED,
             'digital_signature' => $digitalSignature,
+            'resident_receiver_id' => $resident->id,
             'delivered_by_id' => $request->user()?->id,
+            'delivered_at' => now(),
         ]);
 
-        return response()->json(
-            $item->fresh()->load([
-                'apartment.unitType:id,name',
-                'receivedBy:id,full_name,email,document_number',
-                'deliveredBy:id,full_name,email,document_number',
-            ])
-        );
+        $freshItem = $item->fresh()->load([
+            'apartment.unitType:id,name',
+            'receivedBy:id,full_name,email,document_number',
+            'residentReceiver:id,user_id,apartment_id,type,is_active',
+            'residentReceiver.user:id,full_name,email,document_number',
+            'deliveredBy:id,full_name,email,document_number',
+        ]);
+
+        return response()->json($this->present($freshItem));
     }
 
     private function resolveActiveCondominiumId(Request $request): int
@@ -126,6 +160,8 @@ class CorrespondenceController extends Controller
             'delivered',
             'received_by_id',
             'delivered_by_id',
+            'status',
+            'delivered_at',
         ];
 
         foreach ($forbiddenFields as $field) {
@@ -151,6 +187,22 @@ class CorrespondenceController extends Controller
         }
 
         return $apartment;
+    }
+
+    private function rejectCreateForbiddenFieldsFromRequest(Request $request): void
+    {
+        $forbiddenCreateFields = [
+            'resident_receiver_id',
+            'delivered',
+        ];
+
+        foreach ($forbiddenCreateFields as $field) {
+            if ($request->query->has($field) || $request->request->has($field)) {
+                throw ValidationException::withMessages([
+                    $field => ["No se permite enviar {$field} en la creación de correspondencia."],
+                ]);
+            }
+        }
     }
 
     private function storeDigitalSignatureIfBase64(string $signature, int $activeCondominiumId): string
@@ -194,5 +246,43 @@ class CorrespondenceController extends Controller
         Storage::disk('public')->put($path, $binaryData);
 
         return $path;
+    }
+
+    private function present(Correspondence $item): array
+    {
+        $data = $item->toArray();
+        $data['delivered'] = $item->status === Correspondence::STATUS_DELIVERED;
+        $data['signature_url'] = $this->resolvePublicStorageUrl($item->digital_signature);
+
+        return $data;
+    }
+
+    private function resolveResidentInActiveCondominium(int $residentId, int $activeCondominiumId): Resident
+    {
+        $resident = Resident::query()
+            ->where('id', $residentId)
+            ->whereHas('apartment', fn ($query) => $query->where('condominium_id', $activeCondominiumId))
+            ->first();
+
+        if (! $resident) {
+            throw ValidationException::withMessages([
+                'resident_receiver_id' => ['El residente no pertenece al condominio activo.'],
+            ]);
+        }
+
+        return $resident;
+    }
+
+    private function resolvePublicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://', 'data:image'])) {
+            return $path;
+        }
+
+        return asset('storage/'.ltrim($path, '/'));
     }
 }
