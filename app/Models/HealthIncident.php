@@ -44,7 +44,7 @@ class HealthIncident extends Model
 
     public function reportedBy()
     {
-        return $this->belongsTo(User::class, 'reported_by_id');
+        return $this->belongsTo(User::class, 'report    ed_by_id');
     }
 
     /*Scopes*/
