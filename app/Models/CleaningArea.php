@@ -27,4 +27,9 @@ class CleaningArea extends Model
     {
         return $this->hasMany(CleaningRecord::class);
     }
+
+    public function checklistTemplateItems()
+    {
+        return $this->hasMany(CleaningAreaChecklist::class);
+    }
 }

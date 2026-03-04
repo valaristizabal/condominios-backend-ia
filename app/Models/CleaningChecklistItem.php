@@ -15,6 +15,10 @@ class CleaningChecklistItem extends Model
         'completed',
     ];
 
+    protected $casts = [
+        'completed' => 'boolean',
+    ];
+
     /* Relaciones */
 
     public function cleaningRecord()

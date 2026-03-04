@@ -19,6 +19,10 @@ class CleaningRecord extends Model
         'observations',
     ];
 
+    protected $casts = [
+        'cleaning_date' => 'date',
+    ];
+
     /* Relaciones */
 
     public function condominium()

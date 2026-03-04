@@ -4,6 +4,8 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Core\ApartmentController;
 use App\Http\Controllers\Core\CondominiumController;
 use App\Http\Controllers\Core\CorrespondenceController;
+use App\Http\Controllers\Core\CleaningAreaController;
+use App\Http\Controllers\Core\CleaningRecordController;
 use App\Http\Controllers\Core\DashboardController;
 use App\Http\Controllers\Core\EmergencyTypeController;
 use App\Http\Controllers\Core\HealthIncidentController;
@@ -94,4 +96,20 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::get('/correspondences', [CorrespondenceController::class, 'index']);
     Route::post('/correspondences', [CorrespondenceController::class, 'store']);
     Route::patch('/correspondences/{id}/deliver', [CorrespondenceController::class, 'deliver']);
+
+    Route::get('/cleaning-areas', [CleaningAreaController::class, 'index']);
+    Route::post('/cleaning-areas', [CleaningAreaController::class, 'store']);
+    Route::put('/cleaning-areas/{id}', [CleaningAreaController::class, 'update']);
+    Route::patch('/cleaning-areas/{id}/toggle', [CleaningAreaController::class, 'toggle']);
+
+    Route::get('/cleaning-areas/{id}/checklist', [CleaningAreaController::class, 'indexChecklist']);
+    Route::post('/cleaning-areas/{id}/checklist', [CleaningAreaController::class, 'storeChecklistItem']);
+    Route::delete('/cleaning-areas/{id}/checklist/{itemId}', [CleaningAreaController::class, 'destroyChecklistItem']);
+
+    Route::get('/cleaning-records', [CleaningRecordController::class, 'index']);
+    Route::post('/cleaning-records', [CleaningRecordController::class, 'store']);
+    Route::get('/cleaning-records/{id}', [CleaningRecordController::class, 'show']);
+    Route::patch('/cleaning-records/{id}/complete', [CleaningRecordController::class, 'complete']);
+    Route::post('/cleaning-records/{id}/checklist-items', [CleaningRecordController::class, 'storeChecklistItem']);
+    Route::patch('/cleaning-records/{id}/checklist-items/{itemId}', [CleaningRecordController::class, 'updateChecklistItem']);
 });
