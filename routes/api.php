@@ -10,6 +10,8 @@ use App\Http\Controllers\Core\CleaningChecklistItemController;
 use App\Http\Controllers\Core\CleaningRecordController;
 use App\Http\Controllers\Core\CleaningScheduleController;
 use App\Http\Controllers\Core\DashboardController;
+use App\Http\Controllers\Core\EmployeeEntryController;
+use App\Http\Controllers\Core\EmergencyContactController;
 use App\Http\Controllers\Core\EmergencyTypeController;
 use App\Http\Controllers\Core\HealthIncidentController;
 use App\Http\Controllers\Core\InventoryController;
@@ -17,6 +19,7 @@ use App\Http\Controllers\Core\InventoryCategoryController;
 use App\Http\Controllers\Core\InventoryMovementController;
 use App\Http\Controllers\Core\OperativeController;
 use App\Http\Controllers\Core\ProductController;
+use App\Http\Controllers\Core\ReportController;
 use App\Http\Controllers\Core\ResidentController;
 use App\Http\Controllers\Core\UnitTypeController;
 use App\Http\Controllers\Core\UserController;
@@ -48,6 +51,8 @@ Route::middleware(['auth:api', 'manage.users', 'resolve.active.condominium'])->g
 
 Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function () {
     Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+    Route::get('/reports/daily-log', [ReportController::class, 'dailyLog']);
+    Route::get('/reports/monthly-summary', [ReportController::class, 'monthlySummary']);
 
     Route::get('/operatives/roles', [OperativeController::class, 'roles']);
     Route::get('/operatives', [OperativeController::class, 'index']);
@@ -78,6 +83,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::patch('/vehicle-types/{id}/toggle', [VehicleTypeController::class, 'toggle']);
 
     Route::get('/vehicles', [VehicleController::class, 'index']);
+    Route::get('/vehicles/bootstrap-data', [VehicleController::class, 'bootstrapData']);
     Route::post('/vehicles', [VehicleController::class, 'store']);
     Route::put('/vehicles/{id}', [VehicleController::class, 'update']);
     Route::patch('/vehicles/{id}/toggle', [VehicleController::class, 'toggle']);
@@ -85,6 +91,13 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::get('/vehicle-entries', [VehicleEntryController::class, 'index']);
     Route::post('/vehicle-entries', [VehicleEntryController::class, 'store']);
     Route::patch('/vehicle-entries/{id}/checkout', [VehicleEntryController::class, 'checkout']);
+
+    Route::prefix('employee-entries')->group(function () {
+        Route::get('/', [EmployeeEntryController::class, 'index']);
+        Route::post('/', [EmployeeEntryController::class, 'store']);
+        Route::put('/checkout/{id}', [EmployeeEntryController::class, 'checkout']);
+        Route::put('/cancel/{id}', [EmployeeEntryController::class, 'cancel']);
+    });
 
     Route::get('/vehicle-incidents', [VehicleIncidentController::class, 'index']);
     Route::post('/vehicle-incidents', [VehicleIncidentController::class, 'store']);
@@ -94,6 +107,13 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::post('/emergency-types', [EmergencyTypeController::class, 'store']);
     Route::put('/emergency-types/{id}', [EmergencyTypeController::class, 'update']);
     Route::patch('/emergency-types/{id}/toggle', [EmergencyTypeController::class, 'toggle']);
+
+    Route::prefix('emergency-contacts')->group(function () {
+        Route::get('/', [EmergencyContactController::class, 'index']);
+        Route::post('/', [EmergencyContactController::class, 'store']);
+        Route::put('/{id}', [EmergencyContactController::class, 'update']);
+        Route::patch('/{id}/toggle', [EmergencyContactController::class, 'toggle']);
+    });
 
     Route::get('/emergencies', [HealthIncidentController::class, 'index']);
     Route::post('/emergencies', [HealthIncidentController::class, 'store']);
@@ -119,6 +139,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::delete('/cleaning-areas/{areaId}/checklist/{itemId}', [CleaningAreaChecklistController::class, 'destroy']);
 
     Route::get('/cleaning-records', [CleaningRecordController::class, 'index']);
+    Route::get('/cleaning-records/{id}/checklist', [CleaningRecordController::class, 'checklist']);
     Route::post('/cleaning-records', [CleaningRecordController::class, 'store']);
     Route::get('/cleaning-records/{id}', [CleaningRecordController::class, 'show']);
     Route::put('/cleaning-records/{id}', [CleaningRecordController::class, 'update']);
@@ -140,6 +161,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::patch('/cleaning-records/{recordId}/checklist-items/{itemId}', [CleaningChecklistItemController::class, 'updateByRecord']);
 
     Route::get('/products', [ProductController::class, 'index'])->middleware('inventory.operation');
+    Route::get('/inventory/products-with-movements', [ProductController::class, 'productsWithMovements'])->middleware('inventory.operation');
     Route::post('/products', [ProductController::class, 'store'])->middleware('inventory.settings');
     Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('inventory.settings');
     Route::delete('/products/{id}', [ProductController::class, 'destroy'])->middleware('inventory.settings');

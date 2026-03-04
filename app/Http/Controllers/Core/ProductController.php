@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Core;
 use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\InventoryCategory;
+use App\Models\InventoryMovement;
 use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class ProductController extends Controller
             'inventory_id' => ['nullable', 'integer'],
             'type' => ['nullable', Rule::in([Product::TYPE_CONSUMABLE, Product::TYPE_ASSET])],
             'is_active' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         $query = Product::query()
@@ -43,9 +45,66 @@ class ProductController extends Controller
             $query->where('is_active', (bool) $validated['is_active']);
         }
 
-        return response()->json(
-            $query->get()->map(fn (Product $product) => $this->serializeProduct($product))
-        );
+        $products = $query->paginate((int) ($validated['per_page'] ?? 20));
+        $products->getCollection()->transform(fn (Product $product) => $this->serializeProduct($product));
+
+        return response()->json($products);
+    }
+
+    public function productsWithMovements(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->activeCondominium($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $validated = $request->validate([
+            'inventory_id' => ['nullable', 'integer'],
+            'type' => ['nullable', Rule::in([Product::TYPE_CONSUMABLE, Product::TYPE_ASSET])],
+            'is_active' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $query = Product::query()
+            ->with(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])
+            ->whereHas('inventory', function ($inventoryQuery) use ($activeCondominiumId) {
+                $inventoryQuery->where('condominium_id', $activeCondominiumId);
+            })
+            ->orderBy('name');
+
+        if (! empty($validated['inventory_id'])) {
+            $query->where('inventory_id', (int) $validated['inventory_id']);
+        }
+
+        if (! empty($validated['type'])) {
+            $query->where('type', $validated['type']);
+        }
+
+        if (array_key_exists('is_active', $validated)) {
+            $query->where('is_active', (bool) $validated['is_active']);
+        }
+
+        $products = $query->paginate((int) ($validated['per_page'] ?? 20));
+        $productIds = $products->getCollection()->pluck('id')->all();
+
+        $movementsByProduct = collect();
+        if (! empty($productIds)) {
+            $movementsByProduct = InventoryMovement::query()
+                ->with(['registeredBy:id,full_name,email,document_number'])
+                ->whereIn('product_id', $productIds)
+                ->orderByDesc('movement_date')
+                ->orderByDesc('id')
+                ->get()
+                ->groupBy('product_id')
+                ->map(fn ($rows) => $rows->take(5)->values());
+        }
+
+        $products->getCollection()->transform(function (Product $product) use ($movementsByProduct) {
+            return [
+                ...$this->serializeProduct($product),
+                'last_movements' => ($movementsByProduct->get($product->id) ?? collect())->values(),
+            ];
+        });
+
+        return response()->json($products);
     }
 
     public function store(Request $request): JsonResponse

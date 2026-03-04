@@ -31,6 +31,7 @@ class CleaningRecordController extends Controller
             'operative_id' => ['nullable', 'integer'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         $query = CleaningRecord::query()
@@ -39,7 +40,6 @@ class CleaningRecordController extends Controller
                 'operative:id,user_id,condominium_id,position,is_active',
                 'operative.user:id,full_name,email,document_number',
                 'registeredBy:id,full_name,email,document_number',
-                'checklistItems:id,cleaning_record_id,item_name,completed',
             ])
             ->where('condominium_id', $activeCondominiumId)
             ->orderByDesc('cleaning_date')
@@ -65,7 +65,29 @@ class CleaningRecordController extends Controller
             $query->whereDate('cleaning_date', '<=', $validated['date_to']);
         }
 
-        return response()->json($query->get());
+        return response()->json($query->paginate((int) ($validated['per_page'] ?? 20)));
+    }
+
+    public function checklist(Request $request, int $id): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $record = $this->resolveCleaningRecordInActiveCondominium($id, $activeCondominiumId);
+
+        $items = CleaningChecklistItem::query()
+            ->where('cleaning_record_id', $record->id)
+            ->orderBy('id')
+            ->get([
+                'id',
+                'cleaning_record_id',
+                'item_name',
+                'completed',
+                'created_at',
+                'updated_at',
+            ]);
+
+        return response()->json($items);
     }
 
     public function show(Request $request, int $id): JsonResponse

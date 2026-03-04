@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Core;
 
 use App\Http\Controllers\Controller;
 use App\Models\Apartment;
+use App\Models\Operative;
+use App\Models\UnitType;
 use App\Models\Vehicle;
 use App\Models\VehicleType;
 use Illuminate\Database\QueryException;
@@ -14,6 +16,64 @@ use Illuminate\Validation\ValidationException;
 
 class VehicleController extends Controller
 {
+    public function bootstrapData(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $vehicleTypes = VehicleType::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'is_active']);
+
+        $unitTypes = UnitType::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'is_active']);
+
+        $apartments = Apartment::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->orderBy('tower')
+            ->orderBy('number')
+            ->get(['id', 'unit_type_id', 'tower', 'number', 'floor', 'is_active']);
+
+        $operatives = Operative::query()
+            ->with(['user.roles' => fn ($query) => $query->select('roles.id', 'roles.name')])
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (Operative $operative) use ($activeCondominiumId) {
+                $matchedRole = $operative->user?->roles
+                    ?->first(fn ($role) => (int) $role->pivot->condominium_id === $activeCondominiumId);
+
+                return [
+                    'id' => $operative->id,
+                    'user_id' => $operative->user_id,
+                    'condominium_id' => $operative->condominium_id,
+                    'position' => $operative->position,
+                    'contract_type' => $operative->contract_type,
+                    'is_active' => (bool) $operative->is_active,
+                    'role' => $matchedRole ? ['id' => $matchedRole->id, 'name' => $matchedRole->name] : null,
+                    'user' => $operative->user ? [
+                        'id' => $operative->user->id,
+                        'full_name' => $operative->user->full_name,
+                        'email' => $operative->user->email,
+                    ] : null,
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'vehicle_types' => $vehicleTypes,
+            'units' => $unitTypes,
+            'apartments' => $apartments,
+            'operatives' => $operatives,
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
