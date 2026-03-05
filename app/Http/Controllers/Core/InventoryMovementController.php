@@ -66,6 +66,12 @@ class InventoryMovementController extends Controller
                 ]);
             }
 
+            if ($product->isAsset()) {
+                throw ValidationException::withMessages([
+                    'product_id' => ['Los productos tipo activo no manejan movimientos de inventario.'],
+                ]);
+            }
+
             $quantity = (int) $validated['quantity'];
             if ($movementType === 'exit' && $product->isConsumable() && (int) $product->stock < $quantity) {
                 throw ValidationException::withMessages([
@@ -91,6 +97,7 @@ class InventoryMovementController extends Controller
             'movement' => $movement->fresh(),
             'stock_actual' => $product ? (int) $product->stock : 0,
             'minimum_stock' => $product ? (int) $product->minimum_stock : 0,
+            'total_value' => $product && $product->total_value !== null ? (float) $product->total_value : null,
             'is_below_minimum_stock' => $product ? $product->isBelowMinimumStock() : false,
         ], 201);
     }
@@ -135,4 +142,3 @@ class InventoryMovementController extends Controller
         return $product;
     }
 }
-

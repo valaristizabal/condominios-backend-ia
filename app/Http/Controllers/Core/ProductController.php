@@ -7,6 +7,7 @@ use App\Models\Inventory;
 use App\Models\InventoryCategory;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\Supplier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -27,7 +28,11 @@ class ProductController extends Controller
         ]);
 
         $query = Product::query()
-            ->with(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])
+            ->with([
+                'inventory:id,condominium_id,name',
+                'inventoryCategory:id,condominium_id,name,is_active',
+                'supplier:id,condominium_id,name,is_active',
+            ])
             ->whereHas('inventory', function ($inventoryQuery) use ($activeCondominiumId) {
                 $inventoryQuery->where('condominium_id', $activeCondominiumId);
             })
@@ -64,7 +69,11 @@ class ProductController extends Controller
         ]);
 
         $query = Product::query()
-            ->with(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])
+            ->with([
+                'inventory:id,condominium_id,name',
+                'inventoryCategory:id,condominium_id,name,is_active',
+                'supplier:id,condominium_id,name,is_active',
+            ])
             ->whereHas('inventory', function ($inventoryQuery) use ($activeCondominiumId) {
                 $inventoryQuery->where('condominium_id', $activeCondominiumId);
             })
@@ -116,6 +125,7 @@ class ProductController extends Controller
             'inventory_id' => ['required', 'integer', 'exists:inventories,id'],
             'name' => ['required', 'string', 'max:255'],
             'category_id' => ['nullable', 'integer', 'exists:inventory_categories,id'],
+            'supplier_id' => ['nullable', 'integer', 'exists:suppliers,id'],
             'unit_measure' => ['nullable', 'string', 'max:50'],
             'unit_cost' => ['nullable', 'numeric', 'min:0'],
             'stock' => ['nullable', 'integer', 'min:0'],
@@ -129,25 +139,31 @@ class ProductController extends Controller
 
         $this->resolveInventoryInActiveCondominium((int) $validated['inventory_id'], $activeCondominiumId);
         $category = $this->resolveCategoryInActiveCondominium($validated, $activeCondominiumId);
+        $supplier = $this->resolveSupplierInActiveCondominium($validated, $activeCondominiumId);
 
         $type = (string) ($validated['type'] ?? Product::TYPE_CONSUMABLE);
         $product = Product::query()->create([
             'inventory_id' => (int) $validated['inventory_id'],
             'category_id' => $category?->id,
+            'supplier_id' => $supplier?->id,
             'name' => trim($validated['name']),
             'category' => $category?->name,
             'unit_measure' => $validated['unit_measure'] ?? null,
             'unit_cost' => $validated['unit_cost'] ?? null,
             'stock' => (int) ($validated['stock'] ?? 0),
-            'minimum_stock' => (int) ($validated['minimum_stock'] ?? 0),
+            'minimum_stock' => $type === Product::TYPE_CONSUMABLE ? (int) ($validated['minimum_stock'] ?? 0) : 0,
             'type' => $type,
             'asset_code' => $type === Product::TYPE_ASSET ? ($validated['asset_code'] ?? null) : null,
-            'location' => $validated['location'] ?? null,
+            'location' => $type === Product::TYPE_ASSET ? ($validated['location'] ?? null) : null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
             'responsible_id' => $validated['responsible_id'] ?? null,
         ]);
 
-        return response()->json($this->serializeProduct($product->fresh()->load(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])), 201);
+        return response()->json($this->serializeProduct($product->fresh()->load([
+            'inventory:id,condominium_id,name',
+            'inventoryCategory:id,condominium_id,name,is_active',
+            'supplier:id,condominium_id,name,is_active',
+        ])), 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -161,6 +177,7 @@ class ProductController extends Controller
             'inventory_id' => ['sometimes', 'integer', 'exists:inventories,id'],
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:inventory_categories,id'],
+            'supplier_id' => ['sometimes', 'nullable', 'integer', 'exists:suppliers,id'],
             'unit_measure' => ['sometimes', 'nullable', 'string', 'max:50'],
             'unit_cost' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'stock' => ['sometimes', 'integer', 'min:0'],
@@ -180,13 +197,17 @@ class ProductController extends Controller
         if (array_key_exists('category_id', $validated)) {
             $validated['category'] = $category?->name;
         }
+        $supplier = $this->resolveSupplierInActiveCondominium($validated, $activeCondominiumId, true);
+        if (array_key_exists('supplier_id', $validated)) {
+            $validated['supplier_id'] = $supplier?->id;
+        }
 
         $type = (string) ($validated['type'] ?? $product->type ?? Product::TYPE_CONSUMABLE);
-        if ($type === Product::TYPE_CONSUMABLE && array_key_exists('asset_code', $validated) && $validated['asset_code'] === null) {
+        if ($type === Product::TYPE_CONSUMABLE) {
             $validated['asset_code'] = null;
-        }
-        if ($type === Product::TYPE_CONSUMABLE && ! array_key_exists('asset_code', $validated)) {
-            $validated['asset_code'] = null;
+            $validated['location'] = null;
+        } else {
+            $validated['minimum_stock'] = 0;
         }
 
         if (array_key_exists('name', $validated)) {
@@ -195,7 +216,11 @@ class ProductController extends Controller
 
         $product->update($validated);
 
-        return response()->json($this->serializeProduct($product->fresh()->load(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])));
+        return response()->json($this->serializeProduct($product->fresh()->load([
+            'inventory:id,condominium_id,name',
+            'inventoryCategory:id,condominium_id,name,is_active',
+            'supplier:id,condominium_id,name,is_active',
+        ])));
     }
 
     public function destroy(Request $request, int $id): JsonResponse
@@ -208,7 +233,11 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Producto desactivado.',
-            'data' => $this->serializeProduct($product->fresh()->load(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])),
+            'data' => $this->serializeProduct($product->fresh()->load([
+                'inventory:id,condominium_id,name',
+                'inventoryCategory:id,condominium_id,name,is_active',
+                'supplier:id,condominium_id,name,is_active',
+            ])),
         ]);
     }
 
@@ -218,7 +247,11 @@ class ProductController extends Controller
         $this->rejectCondominiumIdFromRequest($request);
 
         $products = Product::query()
-            ->with(['inventory:id,condominium_id,name', 'inventoryCategory:id,condominium_id,name,is_active'])
+            ->with([
+                'inventory:id,condominium_id,name',
+                'inventoryCategory:id,condominium_id,name,is_active',
+                'supplier:id,condominium_id,name,is_active',
+            ])
             ->whereHas('inventory', function ($query) use ($activeCondominiumId) {
                 $query->where('condominium_id', $activeCondominiumId);
             })
@@ -244,8 +277,11 @@ class ProductController extends Controller
             'category_id' => $product->category_id,
             'category' => $product->inventoryCategory?->name ?? $product->category,
             'inventory_category' => $product->inventoryCategory,
+            'supplier_id' => $product->supplier_id,
+            'supplier' => $product->supplier,
             'unit_measure' => $product->unit_measure,
-            'unit_cost' => $product->unit_cost,
+            'unit_cost' => $product->unit_cost !== null ? (float) $product->unit_cost : null,
+            'total_value' => $product->total_value !== null ? (float) $product->total_value : null,
             'type' => $product->type,
             'asset_code' => $product->asset_code,
             'location' => $product->location,
@@ -329,6 +365,39 @@ class ProductController extends Controller
         }
 
         return $category;
+    }
+
+    private function resolveSupplierInActiveCondominium(
+        array $validated,
+        int $activeCondominiumId,
+        bool $partial = false
+    ): ?Supplier {
+        if (! array_key_exists('supplier_id', $validated)) {
+            return null;
+        }
+
+        if ($validated['supplier_id'] === null) {
+            return null;
+        }
+
+        $supplier = Supplier::query()
+            ->where('id', (int) $validated['supplier_id'])
+            ->where('condominium_id', $activeCondominiumId)
+            ->first();
+
+        if (! $supplier) {
+            throw ValidationException::withMessages([
+                'supplier_id' => ['El proveedor no pertenece al condominio activo.'],
+            ]);
+        }
+
+        if (! $supplier->is_active && ! $partial) {
+            throw ValidationException::withMessages([
+                'supplier_id' => ['El proveedor seleccionado esta inactivo.'],
+            ]);
+        }
+
+        return $supplier;
     }
 
     private function resolveProductInActiveCondominium(int $productId, int $activeCondominiumId): Product

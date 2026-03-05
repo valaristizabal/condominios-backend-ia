@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Core;
 
 use App\Http\Controllers\Controller;
+use App\Models\Inventory;
 use App\Models\Operative;
+use App\Models\Product;
 use App\Models\Resident;
 use App\Models\Visit;
 use Illuminate\Http\JsonResponse;
@@ -20,8 +22,26 @@ class DashboardController extends Controller
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
         $this->rejectCondominiumIdFromRequest($request);
 
-        $cacheKey = sprintf('dashboard_summary:%d', $activeCondominiumId);
-        $summary = Cache::remember($cacheKey, now()->addSeconds(30), function () use ($activeCondominiumId) {
+        $validated = $request->validate([
+            'inventory_id' => ['nullable', 'integer'],
+        ]);
+        $inventoryId = (int) ($validated['inventory_id'] ?? 0);
+
+        if ($inventoryId > 0) {
+            $inventoryExists = Inventory::query()
+                ->where('id', $inventoryId)
+                ->where('condominium_id', $activeCondominiumId)
+                ->exists();
+
+            if (! $inventoryExists) {
+                throw ValidationException::withMessages([
+                    'inventory_id' => ['El inventario no pertenece al condominio activo.'],
+                ]);
+            }
+        }
+
+        $cacheKey = sprintf('dashboard_summary:%d:%d', $activeCondominiumId, $inventoryId);
+        $summary = Cache::remember($cacheKey, now()->addSeconds(30), function () use ($activeCondominiumId, $inventoryId) {
             $operativesCount = Operative::query()
                 ->where('condominium_id', $activeCondominiumId)
                 ->count();
@@ -35,10 +55,19 @@ class DashboardController extends Controller
                 ->where('status', self::VISIT_STATUS_INSIDE)
                 ->count();
 
+            $inventoryTotalValue = Product::query()
+                ->where('is_active', true)
+                ->when($inventoryId > 0, fn ($query) => $query->where('inventory_id', $inventoryId))
+                ->whereHas('inventory', function ($query) use ($activeCondominiumId) {
+                    $query->where('condominium_id', $activeCondominiumId);
+                })
+                ->sum('total_value');
+
             return [
                 'operatives_count' => $operativesCount,
                 'residents_count' => $residentsCount,
                 'visitors_inside_count' => $visitorsInsideCount,
+                'inventory_total_value' => (float) $inventoryTotalValue,
             ];
         });
 

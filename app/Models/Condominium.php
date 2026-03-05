@@ -93,4 +93,9 @@ class Condominium extends Model
     {
         return $this->hasMany(Inventory::class);
     }
+
+    public function suppliers()
+    {
+        return $this->hasMany(Supplier::class);
+    }
 }

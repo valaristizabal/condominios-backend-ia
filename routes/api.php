@@ -21,6 +21,7 @@ use App\Http\Controllers\Core\OperativeController;
 use App\Http\Controllers\Core\ProductController;
 use App\Http\Controllers\Core\ReportController;
 use App\Http\Controllers\Core\ResidentController;
+use App\Http\Controllers\Core\SupplierController;
 use App\Http\Controllers\Core\UnitTypeController;
 use App\Http\Controllers\Core\UserController;
 use App\Http\Controllers\Core\VisitController;
@@ -182,4 +183,11 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::post('/inventory-movements/entry', [InventoryMovementController::class, 'entry'])->middleware('inventory.operation');
     Route::post('/inventory-movements/exit', [InventoryMovementController::class, 'exit'])->middleware('inventory.operation');
     Route::get('/products/{id}/movements', [InventoryMovementController::class, 'historyByProduct'])->middleware('inventory.operation');
+
+    Route::middleware(['inventory.settings'])->group(function () {
+        Route::get('/suppliers', [SupplierController::class, 'index']);
+        Route::post('/suppliers', [SupplierController::class, 'store']);
+        Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
+        Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
+    });
 });
