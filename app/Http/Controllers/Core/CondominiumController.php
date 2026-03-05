@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Condominium;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class CondominiumController extends Controller
@@ -14,9 +16,10 @@ class CondominiumController extends Controller
     {
         $condominiums = Condominium::query()
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->map(fn (Condominium $item) => $this->present($item));
 
-        return response()->json($condominiums);
+        return response()->json($condominiums->values());
     }
 
     public function store(Request $request): JsonResponse
@@ -31,11 +34,16 @@ class CondominiumController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'contact_info' => ['nullable', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
+            'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
-        $condominium = Condominium::query()->create($data);
+        $condominium = Condominium::query()->create($this->onlyCondominiumFields($data));
 
-        return response()->json($condominium, 201);
+        if ($request->hasFile('logo')) {
+            $this->replaceLogo($condominium, $request);
+        }
+
+        return response()->json($this->present($condominium->fresh()), 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -59,11 +67,16 @@ class CondominiumController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'contact_info' => ['nullable', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
+            'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
-        $condominium->update($data);
+        $condominium->update($this->onlyCondominiumFields($data));
 
-        return response()->json($condominium->fresh());
+        if ($request->hasFile('logo')) {
+            $this->replaceLogo($condominium, $request);
+        }
+
+        return response()->json($this->present($condominium->fresh()));
     }
 
     public function toggle(int $id): JsonResponse
@@ -77,8 +90,50 @@ class CondominiumController extends Controller
             'message' => $condominium->is_active
                 ? 'Condominio activado.'
                 : 'Condominio desactivado.',
-            'data' => $condominium,
+            'data' => $this->present($condominium->fresh()),
         ]);
     }
-}
 
+    private function onlyCondominiumFields(array $data): array
+    {
+        unset($data['logo']);
+        return $data;
+    }
+
+    private function replaceLogo(Condominium $condominium, Request $request): void
+    {
+        if (! $request->hasFile('logo')) {
+            return;
+        }
+
+        if (! empty($condominium->logo_path) && ! Str::startsWith($condominium->logo_path, ['http://', 'https://'])) {
+            Storage::disk('public')->delete($condominium->logo_path);
+        }
+
+        $path = $request->file('logo')->store(sprintf('condominiums/%d/logo', $condominium->id), 'public');
+
+        $condominium->logo_path = $path;
+        $condominium->save();
+    }
+
+    private function present(Condominium $condominium): array
+    {
+        $data = $condominium->toArray();
+        $data['logo_url'] = $this->resolvePublicStorageUrl($condominium->logo_path);
+
+        return $data;
+    }
+
+    private function resolvePublicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://', 'data:image'])) {
+            return $path;
+        }
+
+        return asset('storage/' . ltrim($path, '/'));
+    }
+}

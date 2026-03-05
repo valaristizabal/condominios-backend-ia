@@ -19,6 +19,7 @@ class Condominium extends Model
         'floors',
         'address',
         'contact_info',
+        'logo_path',
         'is_active',
     ];
 
