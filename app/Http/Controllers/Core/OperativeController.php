@@ -159,6 +159,8 @@ class OperativeController extends Controller
             ], 404);
         }
 
+        $currentUserId = (int) ($operative->user?->id ?? $operative->user_id ?? 0);
+
         $validated = $request->validate([
             'role_id' => ['sometimes', 'integer', 'exists:roles,id'],
             'position' => ['sometimes', 'string', 'max:120'],
@@ -174,13 +176,13 @@ class OperativeController extends Controller
                 'sometimes',
                 'string',
                 'max:50',
-                Rule::unique('users', 'document_number')->ignore($operative->user_id),
+                Rule::unique('users', 'document_number')->ignore($currentUserId, 'id'),
             ],
             'email' => [
                 'sometimes',
                 'email',
                 'max:255',
-                Rule::unique('users', 'email')->ignore($operative->user_id),
+                Rule::unique('users', 'email')->ignore($currentUserId, 'id'),
             ],
             'phone' => ['nullable', 'string', 'max:30'],
             'birth_date' => ['nullable', 'date'],

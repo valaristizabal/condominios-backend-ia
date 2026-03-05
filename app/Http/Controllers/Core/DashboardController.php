@@ -8,6 +8,7 @@ use App\Models\Resident;
 use App\Models\Visit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class DashboardController extends Controller
@@ -19,24 +20,29 @@ class DashboardController extends Controller
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
         $this->rejectCondominiumIdFromRequest($request);
 
-        $operativesCount = Operative::query()
-            ->where('condominium_id', $activeCondominiumId)
-            ->count();
+        $cacheKey = sprintf('dashboard_summary:%d', $activeCondominiumId);
+        $summary = Cache::remember($cacheKey, now()->addSeconds(30), function () use ($activeCondominiumId) {
+            $operativesCount = Operative::query()
+                ->where('condominium_id', $activeCondominiumId)
+                ->count();
 
-        $residentsCount = Resident::query()
-            ->whereHas('apartment', fn ($q) => $q->where('condominium_id', $activeCondominiumId))
-            ->count();
+            $residentsCount = Resident::query()
+                ->whereHas('apartment', fn ($q) => $q->where('condominium_id', $activeCondominiumId))
+                ->count();
 
-        $visitorsInsideCount = Visit::query()
-            ->where('condominium_id', $activeCondominiumId)
-            ->where('status', self::VISIT_STATUS_INSIDE)
-            ->count();
+            $visitorsInsideCount = Visit::query()
+                ->where('condominium_id', $activeCondominiumId)
+                ->where('status', self::VISIT_STATUS_INSIDE)
+                ->count();
 
-        return response()->json([
-            'operatives_count' => $operativesCount,
-            'residents_count' => $residentsCount,
-            'visitors_inside_count' => $visitorsInsideCount,
-        ]);
+            return [
+                'operatives_count' => $operativesCount,
+                'residents_count' => $residentsCount,
+                'visitors_inside_count' => $visitorsInsideCount,
+            ];
+        });
+
+        return response()->json($summary);
     }
 
     private function resolveActiveCondominiumId(Request $request): int

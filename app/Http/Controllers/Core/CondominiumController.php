@@ -147,7 +147,12 @@ class CondominiumController extends Controller
 
     private function hasLogoColumn(): bool
     {
-        return Schema::hasColumn('condominiums', 'logo_path');
+        static $hasLogoColumn = null;
+        if ($hasLogoColumn === null) {
+            $hasLogoColumn = Schema::hasColumn('condominiums', 'logo_path');
+        }
+
+        return $hasLogoColumn;
     }
 
     private function resolvePublicStorageUrl(?string $path): ?string
