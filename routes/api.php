@@ -50,6 +50,8 @@ Route::middleware(['auth:api', 'manage.users', 'resolve.active.condominium'])->g
 });
 
 Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function () {
+    Route::get('/condominiums/active', [CondominiumController::class, 'active']);
+
     Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
     Route::get('/reports/daily-log', [ReportController::class, 'dailyLog']);
     Route::get('/reports/monthly-summary', [ReportController::class, 'monthlySummary']);

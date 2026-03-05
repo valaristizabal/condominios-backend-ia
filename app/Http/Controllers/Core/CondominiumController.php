@@ -10,9 +10,23 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class CondominiumController extends Controller
 {
+    public function active(Request $request): JsonResponse
+    {
+        $activeCondominiumId = (int) $request->attributes->get('activeCondominiumId');
+        if ($activeCondominiumId <= 0) {
+            throw ValidationException::withMessages([
+                'condominium' => ['No hay condominio activo resuelto para esta operacion.'],
+            ]);
+        }
+
+        $condominium = Condominium::query()->findOrFail($activeCondominiumId);
+        return response()->json($this->present($condominium));
+    }
+
     public function index(): JsonResponse
     {
         $condominiums = Condominium::query()
