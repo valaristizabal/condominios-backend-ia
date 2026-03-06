@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
@@ -108,5 +109,76 @@ class UserController extends Controller
             $user->load(['roles:id,name']),
             201
         );
+    }
+
+    public function changePassword(Request $request, int $id): JsonResponse
+    {
+        /** @var User|null $authUser */
+        $authUser = $request->user();
+
+        if (! $authUser) {
+            return response()->json([
+                'message' => 'No autenticado.',
+            ], 401);
+        }
+
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $targetUser = User::query()->findOrFail($id);
+
+        if (! $authUser->is_platform_admin) {
+            $activeCondominiumId = (int) $request->attributes->get('activeCondominiumId');
+
+            if ($activeCondominiumId <= 0) {
+                throw ValidationException::withMessages([
+                    'condominium' => ['No hay condominio activo resuelto para esta operación.'],
+                ]);
+            }
+
+            $isTenantAdmin = $authUser->roles()
+                ->where('user_role.condominium_id', $activeCondominiumId)
+                ->whereIn('name', [
+                    'Administrador Propiedad',
+                    'administrador_propiedad',
+                    'admin_condominio',
+                ])
+                ->exists();
+
+            if (! $isTenantAdmin) {
+                return response()->json([
+                    'message' => 'No tienes permisos para cambiar contraseñas.',
+                ], 403);
+            }
+
+            $targetBelongsToActiveCondominium = $targetUser->roles()
+                ->where('user_role.condominium_id', $activeCondominiumId)
+                ->exists();
+
+            if (! $targetBelongsToActiveCondominium) {
+                return response()->json([
+                    'message' => 'No puedes cambiar la contraseña de usuarios de otro condominio.',
+                ], 403);
+            }
+        }
+
+        $targetUser->password = Hash::make($validated['password']);
+        $targetUser->save();
+
+        return response()->json([
+            'message' => 'Contraseña actualizada correctamente',
+        ]);
+    }
+
+    private function rejectCondominiumIdFromRequest(Request $request): void
+    {
+        if ($request->query->has('condominium_id') || $request->request->has('condominium_id')) {
+            throw ValidationException::withMessages([
+                'condominium_id' => ['No se permite enviar condominium_id en este endpoint.'],
+            ]);
+        }
     }
 }

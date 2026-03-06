@@ -48,6 +48,7 @@ Route::middleware(['auth:api', 'super_usuario'])->group(function () {
 Route::middleware(['auth:api', 'manage.users', 'resolve.active.condominium'])->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::post('/users', [UserController::class, 'store']);
+    Route::patch('/users/{id}/change-password', [UserController::class, 'changePassword']);
 });
 
 Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function () {
