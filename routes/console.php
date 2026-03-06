@@ -16,3 +16,5 @@ Artisan::command('cleaning:schedules:generate-records', function () {
 Schedule::call(function () {
     app(GenerateCleaningRecordsFromSchedulesCommand::class)->handle();
 })->dailyAt('00:05');
+
+Schedule::command('condominiums:deactivate-expired')->daily();

@@ -23,11 +23,13 @@ class Condominium extends Model
         'contact_info',
         'logo_path',
         'is_active',
+        'expiration_date',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'floors' => 'integer',
+        'expiration_date' => 'date',
     ];
 
     public function getLogoUrlAttribute(): ?string

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\UserRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -30,6 +32,43 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'Usuario inactivo.',
             ], 403);
+        }
+
+        if (! $user->is_platform_admin) {
+            $today = Carbon::today();
+
+            $expiredCondominiumIds = UserRole::query()
+                ->where('user_id', $user->id)
+                ->whereHas('condominium', function ($query) use ($today) {
+                    $query->where('is_active', true)
+                        ->whereNotNull('expiration_date')
+                        ->whereDate('expiration_date', '<=', $today);
+                })
+                ->pluck('condominium_id')
+                ->all();
+
+            if (! empty($expiredCondominiumIds)) {
+                \App\Models\Condominium::query()
+                    ->whereIn('id', $expiredCondominiumIds)
+                    ->update(['is_active' => false]);
+            }
+
+            $hasActiveCondominium = UserRole::query()
+                ->where('user_id', $user->id)
+                ->whereHas('condominium', function ($query) use ($today) {
+                    $query->where('is_active', true)
+                        ->where(function ($q) use ($today) {
+                            $q->whereNull('expiration_date')
+                                ->orWhereDate('expiration_date', '>', $today);
+                        });
+                })
+                ->exists();
+
+            if (! $hasActiveCondominium) {
+                return response()->json([
+                    'message' => 'El condominio se encuentra inactivo o vencido.',
+                ], 403);
+            }
         }
 
         $plainToken = Str::random(60);
