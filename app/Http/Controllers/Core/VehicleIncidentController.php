@@ -12,6 +12,20 @@ use Illuminate\Validation\ValidationException;
 
 class VehicleIncidentController extends Controller
 {
+    private const INCIDENT_TYPE_ALIASES = [
+        'robo' => 'unauthorized',
+        'danio' => 'damage',
+        'otro' => 'other',
+    ];
+
+    private const INCIDENT_TYPES = [
+        'bad_parking',
+        'unauthorized',
+        'damage',
+        'suspicious',
+        'other',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         $activeCondominiumId = $request->attributes->get('activeCondominiumId');
@@ -82,6 +96,14 @@ class VehicleIncidentController extends Controller
             ]);
         }
 
+        $normalizedIncidentType = $this->normalizeIncidentType((string) $validated['incident_type']);
+
+        if (! in_array($normalizedIncidentType, self::INCIDENT_TYPES, true)) {
+            throw ValidationException::withMessages([
+                'incident_type' => ['El tipo de novedad no es valido.'],
+            ]);
+        }
+
         $evidencePath = $request->hasFile('evidence')
             ? $request->file('evidence')->store(
                 sprintf('vehicle-incidents/condominium_%d/%s', (int) $activeCondominiumId, now()->format('Y/m/d')),
@@ -95,7 +117,7 @@ class VehicleIncidentController extends Controller
             'apartment_id' => $validated['apartment_id'] ?? null,
             'registered_by_id' => $request->user()?->id,
             'plate' => ! empty($validated['plate']) ? strtoupper(trim($validated['plate'])) : null,
-            'incident_type' => $validated['incident_type'],
+            'incident_type' => $normalizedIncidentType,
             'observations' => $validated['observations'],
             'evidence_path' => $evidencePath,
             'resolved' => false,
@@ -138,5 +160,10 @@ class VehicleIncidentController extends Controller
             ]);
         }
     }
-}
 
+    private function normalizeIncidentType(string $incidentType): string
+    {
+        $normalized = mb_strtolower(trim($incidentType));
+        return self::INCIDENT_TYPE_ALIASES[$normalized] ?? $normalized;
+    }
+}
