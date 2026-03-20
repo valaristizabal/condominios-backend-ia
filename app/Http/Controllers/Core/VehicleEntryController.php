@@ -25,7 +25,7 @@ class VehicleEntryController extends Controller
             'only_active' => ['nullable', 'boolean'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:10'],
         ]);
 
         $query = VehicleEntry::query()
@@ -55,7 +55,7 @@ class VehicleEntryController extends Controller
             $query->whereDate('check_in_at', '<=', $validated['date_to']);
         }
 
-        return response()->json($query->paginate((int) ($validated['per_page'] ?? 20)));
+        return response()->json($query->paginate((int) ($validated['per_page'] ?? 10)));
     }
 
     public function store(Request $request): JsonResponse
