@@ -19,6 +19,8 @@ class CleaningAreaController extends Controller
         $validated = $request->validate([
             'is_active' => ['nullable', 'boolean'],
             'name' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
         $query = CleaningArea::query()
@@ -34,8 +36,20 @@ class CleaningAreaController extends Controller
             $query->where('name', 'like', '%'.$validated['name'].'%');
         }
 
+        $query->withCount('checklistTemplateItems');
+
+        $hasPagination = $request->query->has('page') || $request->query->has('per_page');
+        if (! $hasPagination) {
+            return response()->json($query->get());
+        }
+
         return response()->json(
-            $query->withCount('checklistTemplateItems')->get()
+            $query->paginate(
+                (int) ($validated['per_page'] ?? 12),
+                ['*'],
+                'page',
+                (int) ($validated['page'] ?? 1),
+            )
         );
     }
 

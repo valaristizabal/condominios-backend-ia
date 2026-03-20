@@ -20,6 +20,10 @@ class SupplierController extends Controller
 
         $validated = $request->validate([
             'active' => ['nullable', Rule::in(['0', '1', 0, 1])],
+            'q' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'string', Rule::in(['all', 'active', 'inactive'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:12'],
         ]);
 
         $query = Supplier::query()
@@ -28,11 +32,49 @@ class SupplierController extends Controller
 
         if (array_key_exists('active', $validated)) {
             $query->where('is_active', (int) $validated['active'] === 1);
+            return response()->json(
+                $query->get()->map(fn (Supplier $supplier) => $this->present($supplier))
+            );
         }
 
-        return response()->json(
-            $query->get()->map(fn (Supplier $supplier) => $this->present($supplier))
+        $hasPaginationOrFilters = $request->query->has('page')
+            || $request->query->has('per_page')
+            || $request->query->has('q')
+            || $request->query->has('status');
+
+        if (! $hasPaginationOrFilters) {
+            return response()->json(
+                $query->get()->map(fn (Supplier $supplier) => $this->present($supplier))
+            );
+        }
+
+        $status = (string) ($validated['status'] ?? 'all');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        if (! empty($validated['q'])) {
+            $search = trim((string) $validated['q']);
+            $query->where(function ($subQuery) use ($search) {
+                $subQuery->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('contact_name', 'like', '%' . $search . '%');
+            });
+        }
+
+        $suppliers = $query->paginate(
+            (int) ($validated['per_page'] ?? 12),
+            ['*'],
+            'page',
+            (int) ($validated['page'] ?? 1),
         );
+
+        $suppliers->setCollection(
+            $suppliers->getCollection()->map(fn (Supplier $supplier) => $this->present($supplier))
+        );
+
+        return response()->json($suppliers);
     }
 
     public function store(Request $request): JsonResponse

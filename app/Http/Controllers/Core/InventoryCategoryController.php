@@ -14,16 +14,53 @@ class InventoryCategoryController extends Controller
     {
         $activeCondominiumId = $this->activeCondominium($request);
         $this->rejectCondominiumIdFromRequest($request);
+        $validated = $request->validate([
+            'active' => ['nullable', 'integer', 'in:0,1'],
+            'q' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'string', 'in:all,active,inactive'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:12'],
+        ]);
 
         $query = InventoryCategory::query()
             ->where('condominium_id', $activeCondominiumId)
             ->orderBy('name');
 
-        if ((int) $request->query('active', 0) === 1) {
+        if ((int) ($validated['active'] ?? 0) === 1) {
             $query->where('is_active', true);
+            return response()->json($query->get(['id', 'name', 'is_active']));
         }
 
-        return response()->json($query->get(['id', 'name', 'is_active']));
+        $hasPaginationOrFilters = $request->query->has('page')
+            || $request->query->has('per_page')
+            || $request->query->has('q')
+            || $request->query->has('status');
+
+        if (! $hasPaginationOrFilters) {
+            $query->where('is_active', true);
+            return response()->json($query->get(['id', 'name', 'is_active']));
+        }
+
+        $status = (string) ($validated['status'] ?? 'all');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        if (! empty($validated['q'])) {
+            $search = trim((string) $validated['q']);
+            $query->where('name', 'like', '%' . $search . '%');
+        }
+
+        $categories = $query->paginate(
+            (int) ($validated['per_page'] ?? 12),
+            ['id', 'name', 'is_active'],
+            'page',
+            (int) ($validated['page'] ?? 1),
+        );
+
+        return response()->json($categories);
     }
 
     public function store(Request $request): JsonResponse
@@ -110,4 +147,3 @@ class InventoryCategoryController extends Controller
         }
     }
 }
-

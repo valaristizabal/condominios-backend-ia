@@ -15,11 +15,50 @@ class EmergencyTypeController extends Controller
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
         $this->rejectCondominiumIdFromRequest($request);
+        $validated = $request->validate([
+            'active' => ['nullable', 'integer', 'in:0,1'],
+            'q' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'string', 'in:all,active,inactive'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:12'],
+        ]);
 
-        $emergencyTypes = EmergencyType::query()
+        $query = EmergencyType::query()
             ->where('condominium_id', $activeCondominiumId)
-            ->orderBy('name')
-            ->get();
+            ->orderBy('name');
+
+        if ((int) ($validated['active'] ?? 0) === 1) {
+            $query->where('is_active', true);
+            return response()->json($query->get());
+        }
+
+        $hasPaginationOrFilters = $request->query->has('page')
+            || $request->query->has('per_page')
+            || $request->query->has('q')
+            || $request->query->has('status');
+
+        if (! $hasPaginationOrFilters) {
+            return response()->json($query->get());
+        }
+
+        $status = (string) ($validated['status'] ?? 'all');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        if (! empty($validated['q'])) {
+            $search = trim((string) $validated['q']);
+            $query->where('name', 'like', '%' . $search . '%');
+        }
+
+        $emergencyTypes = $query->paginate(
+            (int) ($validated['per_page'] ?? 12),
+            ['*'],
+            'page',
+            (int) ($validated['page'] ?? 1),
+        );
 
         return response()->json($emergencyTypes);
     }
