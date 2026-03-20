@@ -18,6 +18,10 @@ class EmergencyContactController extends Controller
 
         $validated = $request->validate([
             'active' => ['nullable', 'boolean'],
+            'q' => ['nullable', 'string', 'max:120'],
+            'status' => ['nullable', 'string', 'in:all,active,inactive'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:6'],
         ]);
 
         $query = EmergencyContact::query()
@@ -26,9 +30,41 @@ class EmergencyContactController extends Controller
 
         if (($validated['active'] ?? false) === true) {
             $query->where('is_active', true);
+            return response()->json($query->get());
         }
 
-        return response()->json($query->get());
+        $hasPaginationOrFilters = $request->query->has('page')
+            || $request->query->has('per_page')
+            || $request->query->has('q')
+            || $request->query->has('status');
+
+        if (! $hasPaginationOrFilters) {
+            return response()->json($query->get());
+        }
+
+        $status = (string) ($validated['status'] ?? 'all');
+        if ($status === 'active') {
+            $query->where('is_active', true);
+        } elseif ($status === 'inactive') {
+            $query->where('is_active', false);
+        }
+
+        if (! empty($validated['q'])) {
+            $search = trim((string) $validated['q']);
+            $query->where(function ($subQuery) use ($search) {
+                $subQuery->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('phone_number', 'like', '%' . $search . '%');
+            });
+        }
+
+        $contacts = $query->paginate(
+            (int) ($validated['per_page'] ?? 6),
+            ['*'],
+            'page',
+            (int) ($validated['page'] ?? 1),
+        );
+
+        return response()->json($contacts);
     }
 
     public function store(Request $request): JsonResponse
