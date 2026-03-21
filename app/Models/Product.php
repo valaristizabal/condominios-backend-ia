@@ -50,6 +50,7 @@ class Product extends Model
 
             if ($type === self::TYPE_ASSET) {
                 $product->minimum_stock = 0;
+                $product->stock = 1;
             } else {
                 $product->asset_code = null;
                 $product->serial = null;

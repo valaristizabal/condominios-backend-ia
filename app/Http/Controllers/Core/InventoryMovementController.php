@@ -106,9 +106,9 @@ class InventoryMovementController extends Controller
                 ]);
             }
 
-            if ($product->isAsset() && $product->dado_de_baja) {
+            if ($product->isInactiveAsset()) {
                 throw ValidationException::withMessages([
-                    'product_id' => ['El activo fijo ya fue dado de baja y no admite movimientos nuevos.'],
+                    'product_id' => ['El activo fijo ya fue dado de baja.'],
                 ]);
             }
 
@@ -122,7 +122,7 @@ class InventoryMovementController extends Controller
 
                 if ($quantity !== 1) {
                     throw ValidationException::withMessages([
-                        'quantity' => ['Los activos fijos deben registrarse individualmente con cantidad 1.'],
+                        'quantity' => ['Los activos fijos solo se manejan de forma individual (cantidad = 1).'],
                     ]);
                 }
             }

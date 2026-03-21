@@ -203,6 +203,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
 
         Route::get('/inventory/low-stock', [ProductController::class, 'lowStock'])->middleware('inventory.operation');
         Route::post('/inventory/activos/{id}/baja', [ProductController::class, 'deactivateAsset'])->middleware('inventory.settings');
+        Route::post('/inventory/assets/{id}/deactivate', [ProductController::class, 'deactivateAsset'])->middleware('inventory.settings');
 
         Route::get('/inventory/movements', [InventoryMovementController::class, 'index'])->middleware('inventory.operation');
         Route::post('/inventory-movements/entry', [InventoryMovementController::class, 'entry'])->middleware('inventory.operation');

@@ -157,7 +157,7 @@ class ProductController extends Controller
             'category' => $category?->name,
             'unit_measure' => $validated['unit_measure'] ?? null,
             'unit_cost' => $validated['unit_cost'] ?? null,
-            'stock' => (int) ($validated['stock'] ?? 0),
+            'stock' => $type === Product::TYPE_ASSET ? 1 : (int) ($validated['stock'] ?? 0),
             'minimum_stock' => $type === Product::TYPE_CONSUMABLE ? (int) ($validated['minimum_stock'] ?? 0) : 0,
             'type' => $type,
             'asset_code' => $type === Product::TYPE_ASSET ? ($validated['asset_code'] ?? null) : null,
@@ -217,6 +217,7 @@ class ProductController extends Controller
             $validated['serial'] = null;
             $validated['location'] = null;
         } else {
+            $validated['stock'] = 1;
             $validated['minimum_stock'] = 0;
         }
 
