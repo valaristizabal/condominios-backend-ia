@@ -37,6 +37,11 @@ class CleaningRecordController extends Controller
             ->with(['user:id,full_name,email,document_number'])
             ->where('condominium_id', $activeCondominiumId)
             ->where('is_active', true)
+            ->where(function ($query) {
+                $query->where('position', 'like', '%aseo%')
+                    ->orWhere('position', 'like', '%clean%')
+                    ->orWhere('position', 'like', '%limpieza%');
+            })
             ->orderBy('position')
             ->orderByDesc('id')
             ->get([
@@ -411,6 +416,11 @@ class CleaningRecordController extends Controller
         $operative = Operative::query()
             ->where('id', $operativeId)
             ->where('condominium_id', $activeCondominiumId)
+            ->where(function ($query) {
+                $query->where('position', 'like', '%aseo%')
+                    ->orWhere('position', 'like', '%clean%')
+                    ->orWhere('position', 'like', '%limpieza%');
+            })
             ->first();
 
         if (! $operative) {
@@ -456,6 +466,7 @@ class CleaningRecordController extends Controller
             })
             ->get([
                 'id',
+                'name',
                 'description',
                 'frequency_type',
                 'repeat_interval',
@@ -466,8 +477,11 @@ class CleaningRecordController extends Controller
 
         $pattern = '/\[checklist_item:(\d+)\]/';
 
-        return $schedules
+        $activeSchedules = $schedules
             ->filter(fn (CleaningSchedule $schedule) => $this->scheduleRunsOnDate($schedule, $date))
+            ->values();
+
+        $checklistIds = $activeSchedules
             ->map(function (CleaningSchedule $schedule) use ($pattern) {
                 preg_match($pattern, (string) ($schedule->description ?? ''), $matches);
                 return isset($matches[1]) ? (int) $matches[1] : null;
@@ -476,6 +490,33 @@ class CleaningRecordController extends Controller
             ->unique()
             ->values()
             ->all();
+
+        if (! empty($checklistIds)) {
+            return $checklistIds;
+        }
+
+        if ($activeSchedules->isEmpty()) {
+            return [];
+        }
+
+        $scheduleNames = $activeSchedules
+            ->map(fn (CleaningSchedule $schedule) => trim((string) $schedule->name))
+            ->filter()
+            ->values();
+
+        if ($scheduleNames->isEmpty()) {
+            return [];
+        }
+
+        return CleaningArea::query()
+            ->where('id', $cleaningAreaId)
+            ->first()
+            ?->checklistTemplateItems()
+            ->whereIn('item_name', $scheduleNames->all())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all() ?? [];
     }
 
     private function scheduleRunsOnDate(CleaningSchedule $schedule, CarbonImmutable $date): bool
