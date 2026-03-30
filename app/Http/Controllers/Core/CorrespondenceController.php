@@ -101,7 +101,6 @@ class CorrespondenceController extends Controller
 
         $residentReceiver = null;
         $hasImmediateDelivery = (bool) ($validated['deliver_immediately'] ?? false) || ! empty($validated['resident_receiver_id']);
-
         if (! empty($validated['resident_receiver_id'])) {
             $residentReceiver = $this->resolveResidentInActiveCondominium(
                 (int) $validated['resident_receiver_id'],

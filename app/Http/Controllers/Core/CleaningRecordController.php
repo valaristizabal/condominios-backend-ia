@@ -37,10 +37,10 @@ class CleaningRecordController extends Controller
             ->with(['user:id,full_name,email,document_number'])
             ->where('condominium_id', $activeCondominiumId)
             ->where('is_active', true)
-            ->where(function ($query) {
-                $query->where('position', 'like', '%aseo%')
-                    ->orWhere('position', 'like', '%clean%')
-                    ->orWhere('position', 'like', '%limpieza%');
+            ->whereHas('user.roles', function ($query) use ($activeCondominiumId) {
+                $query->where('roles.name', 'Aseo')
+                    ->where('roles.is_active', true)
+                    ->where('user_role.condominium_id', $activeCondominiumId);
             })
             ->orderBy('position')
             ->orderByDesc('id')
@@ -416,10 +416,10 @@ class CleaningRecordController extends Controller
         $operative = Operative::query()
             ->where('id', $operativeId)
             ->where('condominium_id', $activeCondominiumId)
-            ->where(function ($query) {
-                $query->where('position', 'like', '%aseo%')
-                    ->orWhere('position', 'like', '%clean%')
-                    ->orWhere('position', 'like', '%limpieza%');
+            ->whereHas('user.roles', function ($query) use ($activeCondominiumId) {
+                $query->where('roles.name', 'Aseo')
+                    ->where('roles.is_active', true)
+                    ->where('user_role.condominium_id', $activeCondominiumId);
             })
             ->first();
 
