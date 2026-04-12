@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\Operative;
-use App\Models\Role;
-use App\Models\User;
-use App\Models\UserRole;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Security\Models\Role;
+use App\Modules\Security\Models\User;
+use App\Modules\Security\Models\UserRole;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -99,3 +99,7 @@ class OperativesDemoSeeder extends Seeder
         $this->command?->info('Seeder OperativesDemoSeeder ejecutado: 12 operativos demo creados.');
     }
 }
+
+
+
+

@@ -1,34 +1,34 @@
 <?php
 
-use App\Http\Controllers\Auth\AuthController;
-use App\Http\Controllers\Core\ApartmentController;
-use App\Http\Controllers\Core\CondominiumController;
-use App\Http\Controllers\Core\CorrespondenceController;
-use App\Http\Controllers\Core\CleaningAreaController;
-use App\Http\Controllers\Core\CleaningAreaChecklistController;
-use App\Http\Controllers\Core\CleaningChecklistItemController;
-use App\Http\Controllers\Core\CleaningRecordController;
-use App\Http\Controllers\Core\CleaningScheduleController;
-use App\Http\Controllers\Core\DashboardController;
-use App\Http\Controllers\Core\EmployeeEntryController;
-use App\Http\Controllers\Core\EmergencyContactController;
-use App\Http\Controllers\Core\EmergencyTypeController;
-use App\Http\Controllers\Core\HealthIncidentController;
-use App\Http\Controllers\Core\InventoryController;
-use App\Http\Controllers\Core\InventoryCategoryController;
-use App\Http\Controllers\Core\InventoryMovementController;
-use App\Http\Controllers\Core\OperativeController;
-use App\Http\Controllers\Core\ProductController;
-use App\Http\Controllers\Core\ReportController;
-use App\Http\Controllers\Core\ResidentController;
-use App\Http\Controllers\Core\SupplierController;
-use App\Http\Controllers\Core\UnitTypeController;
-use App\Http\Controllers\Core\UserController;
-use App\Http\Controllers\Core\VisitController;
-use App\Http\Controllers\Core\VehicleController;
-use App\Http\Controllers\Core\VehicleEntryController;
-use App\Http\Controllers\Core\VehicleIncidentController;
-use App\Http\Controllers\Core\VehicleTypeController;
+use App\Modules\Security\Controllers\AuthController;
+use App\Modules\Core\Controllers\ApartmentController;
+use App\Modules\Core\Controllers\CondominiumController;
+use App\Modules\Core\Controllers\CorrespondenceController;
+use App\Modules\Cleaning\Controllers\CleaningAreaController;
+use App\Modules\Cleaning\Controllers\CleaningAreaChecklistController;
+use App\Modules\Cleaning\Controllers\CleaningChecklistItemController;
+use App\Modules\Cleaning\Controllers\CleaningRecordController;
+use App\Modules\Cleaning\Controllers\CleaningScheduleController;
+use App\Modules\Core\Controllers\DashboardController;
+use App\Modules\Core\Controllers\EmployeeEntryController;
+use App\Modules\Emergencies\Controllers\EmergencyContactController;
+use App\Modules\Emergencies\Controllers\EmergencyTypeController;
+use App\Modules\Emergencies\Controllers\HealthIncidentController;
+use App\Modules\Core\Controllers\OperativeController;
+use App\Modules\Core\Controllers\ReportController;
+use App\Modules\Residents\Controllers\ResidentController;
+use App\Modules\Core\Controllers\UnitTypeController;
+use App\Modules\Security\Controllers\UserController;
+use App\Modules\Visits\Controllers\VisitController;
+use App\Modules\Vehicles\Controllers\VehicleController;
+use App\Modules\Vehicles\Controllers\VehicleEntryController;
+use App\Modules\Vehicles\Controllers\VehicleIncidentController;
+use App\Modules\Vehicles\Controllers\VehicleTypeController;
+use App\Modules\Inventory\Controllers\InventoryCategoryController;
+use App\Modules\Inventory\Controllers\InventoryController;
+use App\Modules\Inventory\Controllers\InventoryMovementController;
+use App\Modules\Inventory\Controllers\ProductController;
+use App\Modules\Providers\Controllers\SupplierController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -218,3 +218,29 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         });
     });
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

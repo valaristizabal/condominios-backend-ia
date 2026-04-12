@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Condominium;
+use App\Modules\Core\Models\Condominium;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -47,3 +47,4 @@ class DeactivateExpiredCondominiums extends Command
         return self::SUCCESS;
     }
 }
+

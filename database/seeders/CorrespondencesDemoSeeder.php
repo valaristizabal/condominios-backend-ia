@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\Condominium;
-use App\Models\Correspondence;
-use App\Models\Resident;
-use App\Models\User;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\\Modules\\Core\\Models\\Correspondence;
+use App\Modules\Residents\Models\Resident;
+use App\Modules\Security\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -87,3 +87,6 @@ class CorrespondencesDemoSeeder extends Seeder
         $this->command?->info('Seeder CorrespondencesDemoSeeder ejecutado: 12 correspondencias demo creadas.');
     }
 }
+
+
+

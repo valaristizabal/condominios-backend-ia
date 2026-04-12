@@ -2,24 +2,24 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\CleaningArea;
-use App\Models\CleaningAreaChecklist;
-use App\Models\CleaningSchedule;
-use App\Models\Condominium;
-use App\Models\EmergencyContact;
-use App\Models\EmergencyType;
-use App\Models\Inventory;
-use App\Models\InventoryCategory;
-use App\Models\Operative;
-use App\Models\Product;
-use App\Models\Resident;
-use App\Models\Role;
-use App\Models\Supplier;
-use App\Models\UnitType;
-use App\Models\User;
-use App\Models\UserModulePermission;
-use App\Models\VehicleType;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\Modules\Cleaning\Models\CleaningArea;
+use App\Modules\Cleaning\Models\CleaningAreaChecklist;
+use App\Modules\Cleaning\Models\CleaningSchedule;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Emergencies\Models\EmergencyContact;
+use App\Modules\Emergencies\Models\EmergencyType;
+use App\Modules\Inventory\Models\Inventory;
+use App\Modules\Inventory\Models\InventoryCategory;
+use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Residents\Models\Resident;
+use App\Modules\Security\Models\Role;
+use App\Modules\Providers\Models\Supplier;
+use App\\Modules\\Core\\Models\\UnitType;
+use App\Modules\Security\Models\User;
+use App\Modules\Security\Models\UserModulePermission;
+use App\Modules\Vehicles\Models\VehicleType;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -569,3 +569,19 @@ class RealisticSettingsSeeder extends Seeder
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

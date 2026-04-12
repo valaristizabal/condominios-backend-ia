@@ -2,12 +2,12 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\Condominium;
-use App\Models\User;
-use App\Models\Vehicle;
-use App\Models\VehicleEntry;
-use App\Models\VehicleType;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Security\Models\User;
+use App\Modules\Vehicles\Models\Vehicle;
+use App\Modules\Vehicles\Models\VehicleEntry;
+use App\Modules\Vehicles\Models\VehicleType;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -90,3 +90,8 @@ class VehiclesDemoSeeder extends Seeder
         $this->command?->info('Seeder VehiclesDemoSeeder ejecutado: 24 vehiculos y 24 ingresos activos creados.');
     }
 }
+
+
+
+
+

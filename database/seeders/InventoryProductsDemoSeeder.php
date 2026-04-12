@@ -2,11 +2,11 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\Inventory;
-use App\Models\InventoryCategory;
-use App\Models\Product;
-use App\Models\Supplier;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Inventory\Models\Inventory;
+use App\Modules\Inventory\Models\InventoryCategory;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Providers\Models\Supplier;
 use Illuminate\Database\Seeder;
 
 class InventoryProductsDemoSeeder extends Seeder
@@ -72,3 +72,9 @@ class InventoryProductsDemoSeeder extends Seeder
         $this->command?->info('Seeder InventoryProductsDemoSeeder ejecutado: 12 productos demo creados.');
     }
 }
+
+
+
+
+
+

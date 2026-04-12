@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\Condominium;
-use App\Models\User;
-use App\Models\Visit;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Security\Models\User;
+use App\Modules\Visits\Models\Visit;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -83,3 +83,6 @@ class VisitsDemoSeeder extends Seeder
         $this->command?->info('Seeder VisitsDemoSeeder ejecutado: 11 registros de visitantes creados/actualizados.');
     }
 }
+
+
+

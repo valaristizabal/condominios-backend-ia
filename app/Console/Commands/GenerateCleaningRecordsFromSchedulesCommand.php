@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\CleaningChecklistItem;
-use App\Models\CleaningRecord;
-use App\Models\CleaningSchedule;
+use App\Modules\Cleaning\Models\CleaningChecklistItem;
+use App\Modules\Cleaning\Models\CleaningRecord;
+use App\Modules\Cleaning\Models\CleaningSchedule;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -169,3 +169,4 @@ class GenerateCleaningRecordsFromSchedulesCommand extends Command
         return $templateItem?->item_name ?: $fallbackName;
     }
 }
+

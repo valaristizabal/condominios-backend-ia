@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\Condominium;
-use App\Models\UnitType;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\\Modules\\Core\\Models\\UnitType;
 use Illuminate\Database\Seeder;
 
 class ApartmentsDemoSeeder extends Seeder
@@ -52,3 +52,4 @@ class ApartmentsDemoSeeder extends Seeder
         $this->command?->info('Seeder ApartmentsDemoSeeder ejecutado: 12 inmuebles demo creados.');
     }
 }
+

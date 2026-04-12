@@ -69,3 +69,4 @@ class EnsureInventoryOperationAccess
         return str_replace(['_', '  '], [' ', ' '], $name);
     }
 }
+

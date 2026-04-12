@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\VehicleType;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Vehicles\Models\VehicleType;
 use Illuminate\Database\Seeder;
 
 class VehicleTypesDemoSeeder extends Seeder
@@ -35,3 +35,5 @@ class VehicleTypesDemoSeeder extends Seeder
         $this->command?->info('Seeder VehicleTypesDemoSeeder ejecutado: 24 tipos de vehiculo demo creados.');
     }
 }
+
+

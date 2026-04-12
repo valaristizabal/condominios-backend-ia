@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\Apartment;
-use App\Models\Condominium;
-use App\Models\Resident;
-use App\Models\User;
+use App\\Modules\\Core\\Models\\Apartment;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Residents\Models\Resident;
+use App\Modules\Security\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -67,3 +67,6 @@ class ResidentsDemoSeeder extends Seeder
         $this->command?->info('Seeder ResidentsDemoSeeder ejecutado: 12 residentes demo creados.');
     }
 }
+
+
+

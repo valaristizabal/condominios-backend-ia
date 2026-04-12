@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\CleaningArea;
-use App\Models\Condominium;
+use App\Modules\Cleaning\Models\CleaningArea;
+use App\\Modules\\Core\\Models\\Condominium;
 use Illuminate\Database\Seeder;
 
 class CleaningAreasDemoSeeder extends Seeder
@@ -36,3 +36,5 @@ class CleaningAreasDemoSeeder extends Seeder
         $this->command?->info('Seeder CleaningAreasDemoSeeder ejecutado: 12 areas de aseo demo creadas.');
     }
 }
+
+

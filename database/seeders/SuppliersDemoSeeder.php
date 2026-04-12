@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\Supplier;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Providers\Models\Supplier;
 use Illuminate\Database\Seeder;
 
 class SuppliersDemoSeeder extends Seeder
@@ -41,3 +41,6 @@ class SuppliersDemoSeeder extends Seeder
         $this->command?->info('Seeder SuppliersDemoSeeder ejecutado: 12 proveedores demo creados.');
     }
 }
+
+
+

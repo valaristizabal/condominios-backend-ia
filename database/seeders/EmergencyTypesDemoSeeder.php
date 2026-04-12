@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\EmergencyType;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Emergencies\Models\EmergencyType;
 use Illuminate\Database\Seeder;
 
 class EmergencyTypesDemoSeeder extends Seeder
@@ -38,3 +38,5 @@ class EmergencyTypesDemoSeeder extends Seeder
         $this->command?->info('Seeder EmergencyTypesDemoSeeder ejecutado: 12 tipos de emergencia demo creados.');
     }
 }
+
+

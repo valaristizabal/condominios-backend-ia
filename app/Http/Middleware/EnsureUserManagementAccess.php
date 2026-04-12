@@ -39,3 +39,4 @@ class EnsureUserManagementAccess
         return $next($request);
     }
 }
+

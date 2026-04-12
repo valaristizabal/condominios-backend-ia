@@ -55,3 +55,4 @@ return new class extends Migration
         Schema::dropIfExists('cleaning_records');
     }
 };
+

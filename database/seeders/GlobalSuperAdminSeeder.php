@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Role;
-use App\Models\User;
+use App\Modules\Security\Models\Role;
+use App\Modules\Security\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -35,3 +35,6 @@ class GlobalSuperAdminSeeder extends Seeder
         DB::table('user_role')->where('user_id', $user->id)->delete();
     }
 }
+
+
+

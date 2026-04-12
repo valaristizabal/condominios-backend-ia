@@ -3,9 +3,9 @@
 namespace Tests\Feature;
 
 use Tests\TestCase;
-use App\Models\HealthIncident;
-use App\Models\EmergencyType;
-use App\Models\User;
+use App\Modules\Emergencies\Models\HealthIncident;
+use App\Modules\Emergencies\Models\EmergencyType;
+use App\Modules\Security\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class EmergencyApiTest extends TestCase
@@ -14,7 +14,7 @@ class EmergencyApiTest extends TestCase
 
     public function test_emergency_can_be_created()
     {
-        /** @var \App\Models\User $user */
+        /** @var \App\Modules\Security\Models\User $user */
         $user = User::factory()->create();
 
         $type = EmergencyType::factory()->create([
@@ -37,3 +37,8 @@ class EmergencyApiTest extends TestCase
         ]);
     }
 }
+
+
+
+
+

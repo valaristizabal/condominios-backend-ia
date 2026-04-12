@@ -36,3 +36,4 @@ return new class extends Migration
         Schema::dropIfExists('user_module_permissions');
     }
 };
+

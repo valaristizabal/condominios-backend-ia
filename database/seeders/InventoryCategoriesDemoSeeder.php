@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\InventoryCategory;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Inventory\Models\InventoryCategory;
 use Illuminate\Database\Seeder;
 
 class InventoryCategoriesDemoSeeder extends Seeder
@@ -35,3 +35,5 @@ class InventoryCategoriesDemoSeeder extends Seeder
         $this->command?->info('Seeder InventoryCategoriesDemoSeeder ejecutado: 12 categorias de inventario demo creadas.');
     }
 }
+
+

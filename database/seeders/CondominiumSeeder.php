@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
+use App\\Modules\\Core\\Models\\Condominium;
 use Illuminate\Database\Seeder;
 
 class CondominiumSeeder extends Seeder
@@ -19,4 +19,5 @@ class CondominiumSeeder extends Seeder
         );
     }
 }
+
 

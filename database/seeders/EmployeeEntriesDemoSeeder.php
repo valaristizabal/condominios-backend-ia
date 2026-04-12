@@ -2,10 +2,10 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\EmployeeEntry;
-use App\Models\Operative;
-use App\Models\User;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\\Modules\\Core\\Models\\EmployeeEntry;
+use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Security\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 
@@ -67,4 +67,6 @@ class EmployeeEntriesDemoSeeder extends Seeder
         $this->command?->info('Seeder EmployeeEntriesDemoSeeder ejecutado: 12 ingresos de personal creados (11 historial, 1 activo).');
     }
 }
+
+
 

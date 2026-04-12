@@ -68,3 +68,4 @@ return new class extends Migration
         Schema::dropIfExists('vehicle_incidents');
     }
 };
+

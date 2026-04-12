@@ -43,3 +43,4 @@ class ResolveActiveCondominiumFromUserRole
         return $next($request);
     }
 }
+

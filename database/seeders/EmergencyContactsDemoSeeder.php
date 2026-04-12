@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\EmergencyContact;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Emergencies\Models\EmergencyContact;
 use Illuminate\Database\Seeder;
 
 class EmergencyContactsDemoSeeder extends Seeder
@@ -38,3 +38,5 @@ class EmergencyContactsDemoSeeder extends Seeder
         $this->command?->info('Seeder EmergencyContactsDemoSeeder ejecutado: 12 contactos de emergencia demo creados.');
     }
 }
+
+

@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\Inventory;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Inventory\Models\Inventory;
 use Illuminate\Database\Seeder;
 
 class InventoryLocationsDemoSeeder extends Seeder
@@ -35,3 +35,5 @@ class InventoryLocationsDemoSeeder extends Seeder
         $this->command?->info('Seeder InventoryLocationsDemoSeeder ejecutado: 12 ubicaciones de inventario demo creadas.');
     }
 }
+
+

@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Condominium;
-use App\Models\UnitType;
+use App\\Modules\\Core\\Models\\Condominium;
+use App\\Modules\\Core\\Models\\UnitType;
 use Illuminate\Database\Seeder;
 
 class UnitTypesDemoSeeder extends Seeder
@@ -35,3 +35,4 @@ class UnitTypesDemoSeeder extends Seeder
         $this->command?->info('Seeder UnitTypesDemoSeeder ejecutado: 12 tipos de unidad demo creados.');
     }
 }
+

@@ -18,3 +18,4 @@ Schedule::call(function () {
 })->dailyAt('00:05');
 
 Schedule::command('condominiums:deactivate-expired')->daily();
+
