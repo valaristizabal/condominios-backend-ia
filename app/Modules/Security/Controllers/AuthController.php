@@ -3,6 +3,7 @@
 namespace App\Modules\Security\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Core\Models\Condominium;
 use App\Modules\Security\Models\User;
 use App\Modules\Security\Models\UserRole;
 use Illuminate\Http\JsonResponse;
@@ -24,13 +25,15 @@ class AuthController extends Controller
 
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             return response()->json([
-                'message' => 'Credenciales inválidas.',
+                'success' => false,
+                'message' => 'Credenciales inválidas',
             ], 401);
         }
 
         if (! $user->is_active) {
             return response()->json([
-                'message' => 'Usuario inactivo.',
+                'success' => false,
+                'message' => 'Usuario inactivo',
             ], 403);
         }
 
@@ -48,7 +51,7 @@ class AuthController extends Controller
                 ->all();
 
             if (! empty($expiredCondominiumIds)) {
-                \\App\\Modules\\Core\\Models\\Condominium::query()
+                Condominium::query()
                     ->whereIn('id', $expiredCondominiumIds)
                     ->update(['is_active' => false]);
             }
@@ -66,7 +69,8 @@ class AuthController extends Controller
 
             if (! $hasActiveCondominium) {
                 return response()->json([
-                    'message' => 'El condominio se encuentra inactivo o vencido.',
+                    'success' => false,
+                    'message' => 'El condominio se encuentra inactivo o vencido',
                 ], 403);
             }
         }
@@ -78,6 +82,8 @@ class AuthController extends Controller
         ])->save();
 
         return response()->json([
+            'success' => true,
+            'message' => 'Inicio de sesión exitoso',
             'token' => $plainToken,
             'token_type' => 'Bearer',
             'user' => $user,
@@ -137,9 +143,3 @@ class AuthController extends Controller
         ]);
     }
 }
-
-
-
-
-
-

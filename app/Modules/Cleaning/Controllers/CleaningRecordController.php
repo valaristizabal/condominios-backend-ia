@@ -7,7 +7,7 @@ use App\Modules\Cleaning\Models\CleaningArea;
 use App\Modules\Cleaning\Models\CleaningChecklistItem;
 use App\Modules\Cleaning\Models\CleaningRecord;
 use App\Modules\Cleaning\Models\CleaningSchedule;
-use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Core\Models\Operative;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -189,7 +189,7 @@ class CleaningRecordController extends Controller
 
         if ($templateItems->isEmpty()) {
             return response()->json([
-                'message' => 'Esta área no tiene tareas programadas para este día.',
+                'message' => 'Esta ï¿½rea no tiene tareas programadas para este dï¿½a.',
             ], 422);
         }
 

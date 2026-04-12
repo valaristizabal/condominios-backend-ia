@@ -7,10 +7,13 @@ use App\Modules\Core\Models\Operative;
 use App\Modules\Security\Models\Role;
 use App\Modules\Security\Models\User;
 use App\Modules\Security\Models\UserRole;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -106,20 +109,21 @@ class OperativeController extends Controller
             'document_number' => ['required', 'string', 'max:50', 'unique:users,document_number'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8'],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['nullable', 'string', 'regex:/^\d+$/', 'between:10,15'],
             'birth_date' => ['nullable', 'date'],
             'is_active' => ['sometimes', 'boolean'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'position' => ['nullable', 'string', 'max:120'],
             'contract_type' => ['required', Rule::in(['contratista', 'planta'])],
-            'salary' => ['nullable', 'numeric', 'min:0'],
+            'salary' => ['nullable', 'numeric', 'gt:0'],
             'financial_institution' => ['nullable', 'string', 'max:120'],
             'account_type' => ['nullable', Rule::in(['ahorros', 'corriente'])],
             'account_number' => ['nullable', 'string', 'max:60'],
             'eps' => ['nullable', 'string', 'max:120'],
             'arl' => ['nullable', 'string', 'max:120'],
-            'contract_start_date' => ['nullable', 'date'],
-        ]);
+            'contract_start_date' => ['nullable', 'date', 'before_or_equal:today'],
+        ], $this->validationMessages());
+        $validated = $this->normalizeOperativePayload($validated);
 
         $role = $this->resolveOperativeRole(
             (int) $validated['role_id'],
@@ -205,13 +209,13 @@ class OperativeController extends Controller
             'role_id' => ['sometimes', 'integer', 'exists:roles,id'],
             'position' => ['sometimes', 'string', 'max:120'],
             'contract_type' => ['sometimes', Rule::in(['contratista', 'planta'])],
-            'salary' => ['nullable', 'numeric', 'min:0'],
+            'salary' => ['nullable', 'numeric', 'gt:0'],
             'financial_institution' => ['nullable', 'string', 'max:120'],
             'account_type' => ['nullable', Rule::in(['ahorros', 'corriente'])],
             'account_number' => ['nullable', 'string', 'max:60'],
             'eps' => ['nullable', 'string', 'max:120'],
             'arl' => ['nullable', 'string', 'max:120'],
-            'contract_start_date' => ['nullable', 'date'],
+            'contract_start_date' => ['nullable', 'date', 'before_or_equal:today'],
             'is_active' => ['sometimes', 'boolean'],
             'full_name' => ['sometimes', 'string', 'max:255'],
             'document_number' => [
@@ -226,9 +230,10 @@ class OperativeController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($currentUserId, 'id'),
             ],
-            'phone' => ['nullable', 'string', 'max:30'],
+            'phone' => ['nullable', 'string', 'regex:/^\d+$/', 'between:10,15'],
             'birth_date' => ['nullable', 'date'],
-        ]);
+        ], $this->validationMessages());
+        $validated = $this->normalizeOperativePayload($validated);
 
         $selectedRole = null;
         if (isset($validated['role_id'])) {
@@ -291,6 +296,36 @@ class OperativeController extends Controller
         return response()->json(
             $this->formatOperative($operative->fresh()->load(['user', 'user.roles']), $activeCondominiumId)
         );
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromPayload($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ], $this->validationMessages());
+
+        $file = $validated['file'];
+        if (! $file instanceof UploadedFile) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible leer el archivo CSV cargado.'],
+            ]);
+        }
+
+        [$created, $updated, $failed, $errors] = $this->importCsvFile(
+            $file,
+            $activeCondominiumId,
+            (bool) $request->user()?->is_platform_admin
+        );
+
+        return response()->json([
+            'created' => $created,
+            'updated' => $updated,
+            'failed' => $failed,
+            'errors' => $errors,
+        ]);
     }
 
     private function resolveActiveCondominiumId(Request $request): int
@@ -392,6 +427,477 @@ class OperativeController extends Controller
             'role' => $matchedRole ? ['id' => $matchedRole->id, 'name' => $matchedRole->name] : null,
             'user' => $operative->user,
         ];
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'document_number.unique' => 'Ya existe un operativo con este número de documento.',
+            'phone.regex' => 'El celular debe contener solo números.',
+            'phone.between' => 'El celular debe tener entre 10 y 15 dígitos.',
+            'salary.gt' => 'El salario debe ser mayor a cero.',
+            'contract_start_date.before_or_equal' => 'La fecha de inicio no puede ser futura.',
+        ];
+    }
+
+    private function normalizeOperativePayload(array $validated): array
+    {
+        foreach ([
+            'full_name',
+            'document_number',
+            'email',
+            'phone',
+            'position',
+            'financial_institution',
+            'account_number',
+            'eps',
+            'arl',
+        ] as $field) {
+            if (array_key_exists($field, $validated) && is_string($validated[$field])) {
+                $validated[$field] = trim($validated[$field]);
+            }
+        }
+
+        if (isset($validated['email'])) {
+            $validated['email'] = Str::lower($validated['email']);
+        }
+
+        foreach (['phone', 'position', 'financial_institution', 'account_number', 'eps', 'arl'] as $nullableField) {
+            if (array_key_exists($nullableField, $validated) && $validated[$nullableField] === '') {
+                $validated[$nullableField] = null;
+            }
+        }
+
+        return $validated;
+    }
+
+    private function importCsvFile(UploadedFile $file, int $activeCondominiumId, bool $isPlatformAdmin): array
+    {
+        $defaultRole = $this->resolveDefaultImportRole($isPlatformAdmin);
+        $handle = fopen($file->getRealPath(), 'rb');
+
+        if (! $handle) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible abrir el archivo CSV.'],
+            ]);
+        }
+
+        $created = 0;
+        $updated = 0;
+        $failed = 0;
+        $errors = [];
+
+        try {
+            $this->skipUtf8Bom($handle);
+            $delimiter = $this->detectCsvDelimiter($handle);
+            $header = fgetcsv($handle, 0, $delimiter);
+
+            if (! is_array($header)) {
+                throw ValidationException::withMessages([
+                    'file' => ['El archivo CSV está vacío o no tiene encabezados válidos.'],
+                ]);
+            }
+
+            $normalizedHeader = array_map([$this, 'normalizeCsvHeader'], $header);
+            $required = [
+                'nombre_completo',
+                'documento',
+                'email',
+                'celular',
+                'contrasena',
+                'cargo_rol',
+                'tipo_contrato',
+                'salario',
+                'inicio_contrato',
+            ];
+
+            foreach ($required as $column) {
+                if (! in_array($column, $normalizedHeader, true)) {
+                    throw ValidationException::withMessages([
+                        'file' => ['El archivo debe incluir las columnas requeridas del formato de operativos.'],
+                    ]);
+                }
+            }
+
+            $columnIndex = array_flip($normalizedHeader);
+            $rowNumber = 1;
+            $seenDocuments = [];
+            $seenEmails = [];
+
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rowNumber++;
+
+                if (! is_array($row) || $this->isCsvRowEmpty($row)) {
+                    continue;
+                }
+
+                try {
+                    $payload = [
+                        'full_name' => $this->csvValue($row, $columnIndex, 'nombre_completo'),
+                        'document_number' => $this->csvValue($row, $columnIndex, 'documento'),
+                        'email' => $this->csvValue($row, $columnIndex, 'email'),
+                        'phone' => $this->csvValue($row, $columnIndex, 'celular'),
+                        'birth_date' => $this->normalizeCsvDate(
+                            $this->csvValue($row, $columnIndex, 'fecha_nacimiento'),
+                            'fecha_nacimiento'
+                        ),
+                        'password' => $this->csvValue($row, $columnIndex, 'contrasena'),
+                        'position' => $this->csvValue($row, $columnIndex, 'cargo_interno'),
+                        'contract_type' => $this->normalizeContractType(
+                            $this->csvValue($row, $columnIndex, 'tipo_contrato')
+                        ),
+                        'salary' => $this->csvValue($row, $columnIndex, 'salario'),
+                        'financial_institution' => $this->csvValue($row, $columnIndex, 'institucion_financiera'),
+                        'account_type' => Str::lower($this->csvValue($row, $columnIndex, 'tipo_cuenta')),
+                        'account_number' => $this->csvValue($row, $columnIndex, 'numero_cuenta'),
+                        'eps' => $this->csvValue($row, $columnIndex, 'eps'),
+                        'arl' => $this->csvValue($row, $columnIndex, 'arl'),
+                        'contract_start_date' => $this->normalizeCsvDate(
+                            $this->csvValue($row, $columnIndex, 'inicio_contrato'),
+                            'inicio_contrato'
+                        ),
+                    ];
+                    $payload['role_id'] = $this->resolveImportRoleId(
+                        $this->csvValue($row, $columnIndex, 'cargo_rol'),
+                        $defaultRole,
+                        $isPlatformAdmin
+                    );
+                    $payload['position'] = $payload['position'] !== '' ? $payload['position'] : $defaultRole->name;
+                    $payload['is_active'] = true;
+                } catch (ValidationException $exception) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . collect($exception->errors())->flatten()->first();
+                    continue;
+                }
+
+                if (isset($seenDocuments[$payload['document_number']])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el documento {$payload['document_number']} está duplicado dentro del archivo.";
+                    continue;
+                }
+
+                $seenDocuments[$payload['document_number']] = true;
+
+                if (isset($seenEmails[Str::lower($payload['email'])])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el correo {$payload['email']} está duplicado dentro del archivo.";
+                    continue;
+                }
+
+                $seenEmails[Str::lower($payload['email'])] = true;
+
+                $existingUserByDocument = User::query()
+                    ->where('document_number', $payload['document_number'])
+                    ->first();
+                $existingUserByEmail = User::query()
+                    ->where('email', Str::lower($payload['email']))
+                    ->first();
+
+                if (
+                    $existingUserByDocument &&
+                    $existingUserByEmail &&
+                    (int) $existingUserByDocument->id !== (int) $existingUserByEmail->id
+                ) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el documento y el correo pertenecen a usuarios diferentes.";
+                    continue;
+                }
+
+                $existingUser = $existingUserByDocument ?: $existingUserByEmail;
+                $validationRules = [
+                    'full_name' => ['required', 'string', 'max:255'],
+                    'document_number' => ['required', 'string', 'max:50'],
+                    'email' => ['required', 'email', 'max:255'],
+                    'password' => ['required', 'string', 'min:8'],
+                    'birth_date' => ['nullable', 'date', 'before_or_equal:today'],
+                    'phone' => ['required', 'string', 'regex:/^\d+$/', 'between:10,15'],
+                    'role_id' => ['required', 'integer', 'exists:roles,id'],
+                    'position' => ['nullable', 'string', 'max:120'],
+                    'contract_type' => ['required', Rule::in(['contratista', 'planta'])],
+                    'salary' => ['required', 'numeric', 'gt:0'],
+                    'financial_institution' => ['nullable', 'string', 'max:120'],
+                    'account_type' => ['nullable', Rule::in(['ahorros', 'corriente'])],
+                    'account_number' => ['nullable', 'string', 'max:60'],
+                    'eps' => ['nullable', 'string', 'max:120'],
+                    'arl' => ['nullable', 'string', 'max:120'],
+                    'contract_start_date' => ['required', 'date', 'before_or_equal:today'],
+                ];
+
+                if ($existingUser) {
+                    $validationRules['document_number'][] = Rule::unique('users', 'document_number')->ignore($existingUser->id, 'id');
+                    $validationRules['email'][] = Rule::unique('users', 'email')->ignore($existingUser->id, 'id');
+                } else {
+                    $validationRules['document_number'][] = 'unique:users,document_number';
+                    $validationRules['email'][] = 'unique:users,email';
+                }
+
+                $validator = validator(
+                    $this->normalizeOperativePayload($payload),
+                    $validationRules,
+                    $this->validationMessages()
+                );
+
+                if ($validator->fails()) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . $validator->errors()->first();
+                    continue;
+                }
+
+                try {
+                    $wasUpdated = false;
+                    DB::transaction(function () use ($payload, $activeCondominiumId, $defaultRole, $existingUser, &$wasUpdated): void {
+                        $user = $existingUser;
+
+                        if ($user) {
+                            $user->update([
+                                'full_name' => $payload['full_name'],
+                                'document_number' => $payload['document_number'],
+                                'email' => $payload['email'],
+                                'password' => $payload['password'],
+                                'phone' => $payload['phone'],
+                                'birth_date' => $payload['birth_date'] ?: null,
+                                'is_active' => true,
+                            ]);
+                            $wasUpdated = true;
+                        } else {
+                            $user = User::query()->create([
+                                'full_name' => $payload['full_name'],
+                                'document_number' => $payload['document_number'],
+                                'email' => $payload['email'],
+                                'password' => $payload['password'],
+                                'phone' => $payload['phone'],
+                                'birth_date' => $payload['birth_date'] ?: null,
+                                'is_active' => true,
+                                'is_platform_admin' => false,
+                            ]);
+                        }
+
+                        $operative = Operative::query()
+                            ->where('user_id', $user->id)
+                            ->where('condominium_id', $activeCondominiumId)
+                            ->first();
+
+                        if ($operative) {
+                            $operative->update([
+                                'position' => $payload['position'] ?: $defaultRole->name,
+                                'contract_type' => $payload['contract_type'],
+                                'salary' => $payload['salary'],
+                                'financial_institution' => $payload['financial_institution'] ?: null,
+                                'account_type' => $payload['account_type'] ?: null,
+                                'account_number' => $payload['account_number'] ?: null,
+                                'eps' => $payload['eps'] ?: null,
+                                'arl' => $payload['arl'] ?: null,
+                                'contract_start_date' => $payload['contract_start_date'],
+                                'is_active' => true,
+                            ]);
+                            $wasUpdated = true;
+                        } else {
+                            Operative::query()->create([
+                                'user_id' => $user->id,
+                                'condominium_id' => $activeCondominiumId,
+                                'position' => $payload['position'] ?: $defaultRole->name,
+                                'contract_type' => $payload['contract_type'],
+                                'salary' => $payload['salary'],
+                                'financial_institution' => $payload['financial_institution'] ?: null,
+                                'account_type' => $payload['account_type'] ?: null,
+                                'account_number' => $payload['account_number'] ?: null,
+                                'eps' => $payload['eps'] ?: null,
+                                'arl' => $payload['arl'] ?: null,
+                                'contract_start_date' => $payload['contract_start_date'],
+                                'is_active' => true,
+                            ]);
+                        }
+
+                        UserRole::query()->updateOrCreate(
+                            [
+                                'user_id' => $user->id,
+                                'condominium_id' => $activeCondominiumId,
+                            ],
+                            [
+                                'role_id' => $payload['role_id'],
+                            ]
+                        );
+                    });
+
+                    if ($wasUpdated) {
+                        $updated++;
+                    } else {
+                        $created++;
+                    }
+                } catch (\Throwable) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: no fue posible crear el operativo.";
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return [$created, $updated, $failed, $errors];
+    }
+
+    private function resolveDefaultImportRole(bool $isPlatformAdmin): Role
+    {
+        $blockedRoles = $isPlatformAdmin
+            ? self::ALWAYS_BLOCKED_ROLE_NAMES
+            : array_values(array_unique([
+                ...self::ALWAYS_BLOCKED_ROLE_NAMES,
+                ...self::TENANT_BLOCKED_ADMIN_ROLE_NAMES,
+            ]));
+
+        $role = Role::query()
+            ->where('is_active', true)
+            ->whereNotIn('name', $blockedRoles)
+            ->orderByRaw("case when name = 'Seguridad' then 0 else 1 end")
+            ->orderBy('name')
+            ->first();
+
+        if (! $role) {
+            throw ValidationException::withMessages([
+                'file' => ['No existe un rol operativo activo disponible para la importación.'],
+            ]);
+        }
+
+        return $role;
+    }
+
+    private function resolveImportRoleId(string $roleName, Role $defaultRole, bool $isPlatformAdmin): int
+    {
+        $normalizedRoleName = trim($roleName);
+        if ($normalizedRoleName === '') {
+            return $defaultRole->id;
+        }
+
+        $role = Role::query()
+            ->whereRaw('LOWER(name) = ?', [Str::lower($normalizedRoleName)])
+            ->first();
+
+        if (! $role) {
+            throw ValidationException::withMessages([
+                'cargo_rol' => ["El rol '{$roleName}' no existe."],
+            ]);
+        }
+
+        $this->resolveOperativeRole($role->id, $isPlatformAdmin);
+
+        return $role->id;
+    }
+
+    private function skipUtf8Bom($handle): void
+    {
+        $bom = "\xEF\xBB\xBF";
+        $firstBytes = fread($handle, 3);
+
+        if ($firstBytes !== $bom) {
+            rewind($handle);
+        }
+    }
+
+    private function detectCsvDelimiter($handle): string
+    {
+        $position = ftell($handle);
+        $sample = fgets($handle);
+
+        if ($sample === false) {
+            fseek($handle, $position);
+            return ',';
+        }
+
+        $commaCount = substr_count($sample, ',');
+        $semicolonCount = substr_count($sample, ';');
+
+        fseek($handle, $position);
+
+        return $semicolonCount > $commaCount ? ';' : ',';
+    }
+
+    private function normalizeCsvHeader(mixed $value): string
+    {
+        $text = $this->normalizeCsvCell($value);
+        $text = mb_strtolower($text, 'UTF-8');
+        $text = str_replace(['á', 'é', 'í', 'ó', 'ú'], ['a', 'e', 'i', 'o', 'u'], $text);
+        $text = preg_replace('/\s+/u', '_', $text) ?? $text;
+
+        return trim($text, '_');
+    }
+
+    private function normalizeCsvCell(mixed $value): string
+    {
+        $text = trim((string) $value);
+        $text = str_replace("\xC2\xA0", ' ', $text);
+
+        return trim($text);
+    }
+
+    private function normalizeCsvDate(string $value, string $fieldName): ?string
+    {
+        $normalizedValue = trim($value);
+
+        if ($normalizedValue === '') {
+            return null;
+        }
+
+        foreach (['!Y-m-d', '!j/n/Y', '!j/m/Y', '!d/n/Y', '!d/m/Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $normalizedValue);
+
+                if ($date !== false && ! Carbon::hasFormatWithModifiers($normalizedValue, $format)) {
+                    continue;
+                }
+
+                if ($date !== false) {
+                    return $date->format('Y-m-d');
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        $timestamp = strtotime($normalizedValue);
+        if ($timestamp !== false) {
+            return date('Y-m-d', $timestamp);
+        }
+
+        throw ValidationException::withMessages([
+            $fieldName => ["La fecha '{$normalizedValue}' no es válida. Formatos permitidos: YYYY-MM-DD o DD/MM/YYYY."],
+        ]);
+    }
+
+    private function normalizeContractType(string $value): string
+    {
+        $normalizedValue = Str::lower(trim($value));
+
+        if (in_array($normalizedValue, ['planta', 'contratista'], true)) {
+            return $normalizedValue;
+        }
+
+        throw ValidationException::withMessages([
+            'tipo_contrato' => [
+                "El tipo de contrato '{$value}' no es válido. Valores permitidos: planta, contratista.",
+            ],
+        ]);
+    }
+
+    private function csvValue(array $row, array $columnIndex, string $column): string
+    {
+        $index = $columnIndex[$column] ?? null;
+
+        if ($index === null) {
+            return '';
+        }
+
+        return $this->normalizeCsvCell($row[$index] ?? '');
+    }
+
+    private function isCsvRowEmpty(array $row): bool
+    {
+        foreach ($row as $value) {
+            if ($this->normalizeCsvCell($value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

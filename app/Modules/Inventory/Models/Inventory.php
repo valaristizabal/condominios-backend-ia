@@ -2,7 +2,7 @@
 
 namespace App\Modules\Inventory\Models;
 
-use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Core\Models\Condominium;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 

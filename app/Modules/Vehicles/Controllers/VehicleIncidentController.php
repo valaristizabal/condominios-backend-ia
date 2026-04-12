@@ -3,7 +3,7 @@
 namespace App\Modules\Vehicles\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\\Modules\\Core\\Models\\Apartment;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Vehicles\Models\Vehicle;
 use App\Modules\Vehicles\Models\VehicleIncident;
 use Illuminate\Http\JsonResponse;

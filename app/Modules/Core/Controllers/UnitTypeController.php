@@ -3,6 +3,7 @@
 namespace App\Modules\Core\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Core\Models\UnitType;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -54,13 +55,19 @@ class UnitTypeController extends Controller
                     fn ($q) => $q->where('condominium_id', $activeCondominiumId)
                 ),
             ],
+            'allows_residents' => ['sometimes', 'boolean'],
+            'requires_parent' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        $this->validateBehaviorFlags($validated);
 
         try {
             $unitType = UnitType::query()->create([
                 'condominium_id' => $activeCondominiumId,
                 'name' => $validated['name'],
+                'allows_residents' => $validated['allows_residents'] ?? false,
+                'requires_parent' => $validated['requires_parent'] ?? false,
                 'is_active' => $validated['is_active'] ?? true,
             ]);
         } catch (QueryException $exception) {
@@ -96,8 +103,20 @@ class UnitTypeController extends Controller
                     ->where(fn ($q) => $q->where('condominium_id', $activeCondominiumId))
                     ->ignore($unitType->id),
             ],
+            'allows_residents' => ['sometimes', 'boolean'],
+            'requires_parent' => ['sometimes', 'boolean'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        $this->validateBehaviorFlags([
+            'allows_residents' => $validated['allows_residents'] ?? $unitType->allows_residents,
+            'requires_parent' => $validated['requires_parent'] ?? $unitType->requires_parent,
+        ]);
+        $this->ensureBehaviorUpdateDoesNotBreakExistingData(
+            $unitType,
+            (bool) ($validated['allows_residents'] ?? $unitType->allows_residents),
+            (bool) ($validated['requires_parent'] ?? $unitType->requires_parent)
+        );
 
         try {
             $unitType->update($validated);
@@ -151,6 +170,69 @@ class UnitTypeController extends Controller
         if ($request->query->has('condominium_id') || $request->request->has('condominium_id')) {
             throw ValidationException::withMessages([
                 'condominium_id' => ['No se permite enviar condominium_id en este endpoint.'],
+            ]);
+        }
+    }
+
+    private function validateBehaviorFlags(array $validated): void
+    {
+        $requiresParent = (bool) ($validated['requires_parent'] ?? false);
+        $allowsResidents = (bool) ($validated['allows_residents'] ?? false);
+
+        if ($requiresParent && $allowsResidents) {
+            throw ValidationException::withMessages([
+                'requires_parent' => ['Un tipo de unidad que depende de otro inmueble no puede registrar residentes directamente.'],
+                'allows_residents' => ['Desactiva residentes directos o marca el tipo como independiente.'],
+            ]);
+        }
+    }
+
+    private function ensureBehaviorUpdateDoesNotBreakExistingData(
+        UnitType $unitType,
+        bool $allowsResidents,
+        bool $requiresParent
+    ): void {
+        $apartments = Apartment::query()
+            ->withCount(['residents', 'children'])
+            ->where('unit_type_id', $unitType->id);
+
+        $hasResidents = (clone $apartments)->has('residents')->exists();
+        $hasChildren = (clone $apartments)->has('children')->exists();
+        $hasParentAssigned = (clone $apartments)->whereNotNull('parent_id')->exists();
+
+        if (! $allowsResidents && $hasResidents) {
+            throw ValidationException::withMessages([
+                'allows_residents' => ['No puedes desactivar residentes directos porque ya existen residentes asociados a inmuebles de este tipo.'],
+            ]);
+        }
+
+        if (! $allowsResidents && $hasChildren) {
+            throw ValidationException::withMessages([
+                'allows_residents' => ['No puedes desactivar residentes directos porque ya existen inmuebles hijos que dependen de unidades de este tipo.'],
+            ]);
+        }
+
+        if ($allowsResidents && $hasParentAssigned) {
+            throw ValidationException::withMessages([
+                'allows_residents' => ['No puedes permitir residentes directos en un tipo que ya tiene inmuebles asociados como unidades hijas.'],
+            ]);
+        }
+
+        if ($requiresParent && ($hasResidents || $hasChildren)) {
+            throw ValidationException::withMessages([
+                'requires_parent' => ['No puedes convertir este tipo en dependiente porque ya existen inmuebles principales o residentes asociados.'],
+            ]);
+        }
+
+        if ($requiresParent && (clone $apartments)->whereNull('parent_id')->exists()) {
+            throw ValidationException::withMessages([
+                'requires_parent' => ['No puedes exigir inmueble principal porque ya existen inmuebles de este tipo sin padre asociado.'],
+            ]);
+        }
+
+        if (! $requiresParent && $hasParentAssigned) {
+            throw ValidationException::withMessages([
+                'requires_parent' => ['No puedes quitar la dependencia porque ya existen inmuebles de este tipo con padre asociado.'],
             ]);
         }
     }

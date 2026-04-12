@@ -43,7 +43,6 @@ class CondominiumController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'tenant_code' => ['required', 'string', 'max:50', 'alpha_dash', 'unique:condominiums,tenant_code'],
             'type' => ['nullable', 'string', 'max:100'],
-            'common_areas' => ['nullable', 'string'],
             'tower' => ['nullable', 'string', 'max:100'],
             'floors' => ['nullable', 'integer', 'min:1'],
             'address' => ['nullable', 'string', 'max:255'],
@@ -77,7 +76,6 @@ class CondominiumController extends Controller
                 Rule::unique('condominiums', 'tenant_code')->ignore($condominium->id),
             ],
             'type' => ['nullable', 'string', 'max:100'],
-            'common_areas' => ['nullable', 'string'],
             'tower' => ['nullable', 'string', 'max:100'],
             'floors' => ['nullable', 'integer', 'min:1'],
             'address' => ['nullable', 'string', 'max:255'],
@@ -140,6 +138,8 @@ class CondominiumController extends Controller
     private function present(Condominium $condominium): array
     {
         $data = $condominium->toArray();
+        $data['logo'] = $condominium->logo_path;
+        $data['logo_path'] = $condominium->logo_path;
         $data['logo_url'] = $this->hasLogoColumn()
             ? $this->resolvePublicStorageUrl($condominium->logo_path)
             : null;
@@ -167,7 +167,7 @@ class CondominiumController extends Controller
             return $path;
         }
 
-        return asset('storage/' . ltrim($path, '/'));
+        return Storage::disk('public')->url($path);
     }
 }
 

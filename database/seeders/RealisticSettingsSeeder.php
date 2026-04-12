@@ -57,17 +57,21 @@ class RealisticSettingsSeeder extends Seeder
     private function seedUnitTypes(int $condominiumId): array
     {
         $types = [
-            'Apartamento',
-            'Apartaestudio',
-            'Local Comercial',
-            'Oficina Administrativa',
+            ['name' => 'Apartamento', 'allows_residents' => true, 'requires_parent' => false],
+            ['name' => 'Apartaestudio', 'allows_residents' => true, 'requires_parent' => false],
+            ['name' => 'Local Comercial', 'allows_residents' => true, 'requires_parent' => false],
+            ['name' => 'Oficina Administrativa', 'allows_residents' => true, 'requires_parent' => false],
         ];
 
         $result = [];
-        foreach ($types as $name) {
-            $result[$name] = UnitType::query()->updateOrCreate(
-                ['condominium_id' => $condominiumId, 'name' => $name],
-                ['is_active' => true]
+        foreach ($types as $typeData) {
+            $result[$typeData['name']] = UnitType::query()->updateOrCreate(
+                ['condominium_id' => $condominiumId, 'name' => $typeData['name']],
+                [
+                    'allows_residents' => $typeData['allows_residents'],
+                    'requires_parent' => $typeData['requires_parent'],
+                    'is_active' => true,
+                ]
             );
         }
 

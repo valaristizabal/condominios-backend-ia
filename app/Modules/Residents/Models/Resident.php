@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Modules\Residents\Models;
-use App\\Modules\\Core\\Models\\Apartment;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Security\Models\User;
 
 use Illuminate\Database\Eloquent\Model;

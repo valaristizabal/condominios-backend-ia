@@ -64,6 +64,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         Route::get('/operatives/roles', [OperativeController::class, 'roles']);
         Route::get('/operatives', [OperativeController::class, 'index']);
         Route::post('/operatives', [OperativeController::class, 'store']);
+        Route::post('/operatives/import', [OperativeController::class, 'import']);
         Route::put('/operatives/{id}', [OperativeController::class, 'update']);
 
         Route::get('/residents', [ResidentController::class, 'index']);
@@ -77,6 +78,8 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
 
         Route::get('/apartments', [ApartmentController::class, 'index']);
         Route::post('/apartments', [ApartmentController::class, 'store']);
+        Route::post('/apartments/import', [ApartmentController::class, 'import']);
+        Route::post('/inmuebles/import', [ApartmentController::class, 'import']);
         Route::put('/apartments/{id}', [ApartmentController::class, 'update']);
         Route::patch('/apartments/{id}/toggle', [ApartmentController::class, 'toggle']);
 

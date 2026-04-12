@@ -2,8 +2,8 @@
 
 namespace App\Modules\Cleaning\Models;
 
-use App\\Modules\\Core\\Models\\Condominium;
-use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Core\Models\Condominium;
+use App\Modules\Core\Models\Operative;
 use App\Modules\Security\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,7 +57,7 @@ class CleaningRecord extends Model
         return $this->hasMany(CleaningChecklistItem::class);
     }
 
-    /* Scopes útiles */
+    /* Scopes ï¿½tiles */
 
     public function scopePending($query)
     {

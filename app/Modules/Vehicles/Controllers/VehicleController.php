@@ -3,9 +3,9 @@
 namespace App\Modules\Vehicles\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\\Modules\\Core\\Models\\Apartment;
-use App\\Modules\\Core\\Models\\Operative;
-use App\\Modules\\Core\\Models\\UnitType;
+use App\Modules\Core\Models\Apartment;
+use App\Modules\Core\Models\Operative;
+use App\Modules\Core\Models\UnitType;
 use App\Modules\Vehicles\Models\Vehicle;
 use App\Modules\Vehicles\Models\VehicleType;
 use Illuminate\Database\QueryException;

@@ -3,8 +3,8 @@
 namespace App\Modules\Visits\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\\Modules\\Core\\Models\\Apartment;
-use App\\Modules\\Core\\Models\\UnitType;
+use App\Modules\Core\Models\Apartment;
+use App\Modules\Core\Models\UnitType;
 use App\Modules\Visits\Models\Visit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

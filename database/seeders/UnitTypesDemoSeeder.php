@@ -28,6 +28,8 @@ class UnitTypesDemoSeeder extends Seeder
             UnitType::query()->create([
                 'condominium_id' => $condominium->id,
                 'name' => 'UT26-' . str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+                'allows_residents' => true,
+                'requires_parent' => false,
                 'is_active' => $index % 4 !== 0,
             ]);
         }

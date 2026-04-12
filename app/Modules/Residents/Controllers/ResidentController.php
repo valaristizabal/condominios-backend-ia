@@ -3,7 +3,7 @@
 namespace App\Modules\Residents\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\\Modules\\Core\\Models\\Apartment;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Residents\Models\Resident;
 use App\Modules\Security\Models\User;
 use Illuminate\Database\QueryException;
@@ -30,7 +30,12 @@ class ResidentController extends Controller
         ]);
 
         $residents = Resident::query()
-            ->with(['user', 'apartment.unitType:id,name'])
+            ->with([
+                'user',
+                'apartment.unitType:id,name,allows_residents,requires_parent',
+                'apartment.children:id,parent_id,unit_type_id,tower,number,floor,is_active',
+                'apartment.children.unitType:id,name,allows_residents,requires_parent',
+            ])
             ->whereHas('apartment', fn ($q) => $q->where('condominium_id', $activeCondominiumId))
             ->when(
                 ! empty($validated['q']),
@@ -84,7 +89,7 @@ class ResidentController extends Controller
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
-        $apartment = $this->resolveApartmentInActiveCondominium(
+        $apartment = $this->resolvePrimaryApartmentInActiveCondominium(
             (int) $validated['apartment_id'],
             $activeCondominiumId
         );
@@ -112,7 +117,12 @@ class ResidentController extends Controller
             throw $exception;
         }
 
-        return response()->json($resident->fresh()->load(['user', 'apartment.unitType:id,name']), 201);
+        return response()->json($resident->fresh()->load([
+            'user',
+            'apartment.unitType:id,name,allows_residents,requires_parent',
+            'apartment.children:id,parent_id,unit_type_id,tower,number,floor,is_active',
+            'apartment.children.unitType:id,name,allows_residents,requires_parent',
+        ]), 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -121,7 +131,7 @@ class ResidentController extends Controller
         $this->rejectCondominiumIdFromRequest($request);
 
         $resident = Resident::query()
-            ->with(['user', 'apartment.unitType:id,name'])
+            ->with(['user', 'apartment.unitType:id,name,allows_residents,requires_parent'])
             ->whereHas('apartment', fn ($q) => $q->where('condominium_id', $activeCondominiumId))
             ->where('id', $id)
             ->firstOrFail();
@@ -148,7 +158,7 @@ class ResidentController extends Controller
         ]);
 
         if (isset($validated['apartment_id'])) {
-            $this->resolveApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
+            $this->resolvePrimaryApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
         }
 
         try {
@@ -185,7 +195,12 @@ class ResidentController extends Controller
             throw $exception;
         }
 
-        return response()->json($resident->fresh()->load(['user', 'apartment.unitType:id,name']));
+        return response()->json($resident->fresh()->load([
+            'user',
+            'apartment.unitType:id,name,allows_residents,requires_parent',
+            'apartment.children:id,parent_id,unit_type_id,tower,number,floor,is_active',
+            'apartment.children.unitType:id,name,allows_residents,requires_parent',
+        ]));
     }
 
     private function resolveActiveCondominiumId(Request $request): int
@@ -210,9 +225,10 @@ class ResidentController extends Controller
         }
     }
 
-    private function resolveApartmentInActiveCondominium(int $apartmentId, int $activeCondominiumId): Apartment
+    private function resolvePrimaryApartmentInActiveCondominium(int $apartmentId, int $activeCondominiumId): Apartment
     {
         $apartment = Apartment::query()
+            ->with('unitType:id,name,allows_residents,requires_parent')
             ->where('id', $apartmentId)
             ->where('condominium_id', $activeCondominiumId)
             ->first();
@@ -220,6 +236,12 @@ class ResidentController extends Controller
         if (! $apartment) {
             throw ValidationException::withMessages([
                 'apartment_id' => ['El apartamento no pertenece al condominio activo.'],
+            ]);
+        }
+
+        if (! $apartment->isPrimaryApartment()) {
+            throw ValidationException::withMessages([
+                'apartment_id' => ['Solo se pueden registrar residentes en inmuebles cuyo tipo permita residentes directos.'],
             ]);
         }
 

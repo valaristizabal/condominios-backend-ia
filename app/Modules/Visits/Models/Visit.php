@@ -1,8 +1,8 @@
 <?php
 
 namespace App\Modules\Visits\Models;
-use App\\Modules\\Core\\Models\\Apartment;
-use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Core\Models\Apartment;
+use App\Modules\Core\Models\Condominium;
 use App\Modules\Security\Models\User;
 
 use Illuminate\Database\Eloquent\Model;

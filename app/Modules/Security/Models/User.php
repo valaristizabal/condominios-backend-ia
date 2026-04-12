@@ -1,8 +1,8 @@
 <?php
 
 namespace App\Modules\Security\Models;
-use App\\Modules\\Core\\Models\\Correspondence;
-use App\\Modules\\Core\\Models\\Operative;
+use App\Modules\Core\Models\Correspondence;
+use App\Modules\Core\Models\Operative;
 use App\Modules\Vehicles\Models\VehicleIncident;
 use App\Modules\Residents\Models\Resident;
 

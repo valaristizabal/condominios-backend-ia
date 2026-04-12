@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Modules\Cleaning\Models;
-use App\\Modules\\Core\\Models\\Condominium;
+use App\Modules\Core\Models\Condominium;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

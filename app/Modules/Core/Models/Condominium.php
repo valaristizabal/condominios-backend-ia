@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Modules\Core\Models;
+
 use App\Modules\Cleaning\Models\CleaningArea;
 use App\Modules\Cleaning\Models\CleaningRecord;
 use App\Modules\Emergencies\Models\EmergencyType;
@@ -13,6 +14,7 @@ use App\Modules\Vehicles\Models\VehicleIncident;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class Condominium extends Model
@@ -25,7 +27,6 @@ class Condominium extends Model
         'name',
         'tenant_code',
         'type',
-        'common_areas',
         'tower',
         'floors',
         'address',
@@ -44,6 +45,7 @@ class Condominium extends Model
     public function getLogoUrlAttribute(): ?string
     {
         $path = $this->attributes['logo_path'] ?? null;
+
         if (! $path) {
             return null;
         }
@@ -52,7 +54,11 @@ class Condominium extends Model
             return $path;
         }
 
-        return asset('storage/' . ltrim($path, '/'));
+        if (! Storage::disk('public')->exists($path)) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 
     /* Relationships*/
