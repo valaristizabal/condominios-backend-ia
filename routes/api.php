@@ -193,6 +193,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::middleware('module:inventory')->group(function () {
         Route::get('/products', [ProductController::class, 'index'])->middleware('inventory.operation');
         Route::get('/inventory/products-with-movements', [ProductController::class, 'productsWithMovements'])->middleware('inventory.operation');
+        Route::post('/products/import', [ProductController::class, 'import'])->middleware('inventory.settings');
         Route::post('/products', [ProductController::class, 'store'])->middleware('inventory.settings');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('inventory.settings');
         Route::delete('/products/{id}', [ProductController::class, 'destroy'])->middleware('inventory.settings');

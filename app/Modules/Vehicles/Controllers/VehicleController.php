@@ -127,8 +127,9 @@ class VehicleController extends Controller
         $validated = $request->validate([
             'vehicle_type_id' => ['required', 'integer', 'exists:vehicle_types,id'],
             'apartment_id' => ['nullable', 'integer', 'exists:apartments,id'],
+            'has_plate' => ['required', 'boolean'],
             'plate' => [
-                'required',
+                'nullable',
                 'string',
                 'max:20',
                 Rule::unique('vehicles', 'plate')->where(
@@ -151,12 +152,20 @@ class VehicleController extends Controller
             $apartmentId = $apartment->id;
         }
 
+        $normalizedPlate = $this->normalizeVehiclePlate($validated['plate'] ?? null);
+        if ((bool) $validated['has_plate'] && $normalizedPlate === null) {
+            throw ValidationException::withMessages([
+                'plate' => ['La placa es obligatoria cuando el vehículo sí tiene placa.'],
+            ]);
+        }
+
         try {
             $vehicle = Vehicle::query()->create([
                 'condominium_id' => $activeCondominiumId,
                 'vehicle_type_id' => $vehicleType->id,
                 'apartment_id' => $apartmentId,
-                'plate' => strtoupper(trim($validated['plate'])),
+                'has_plate' => (bool) $validated['has_plate'],
+                'plate' => (bool) $validated['has_plate'] ? $normalizedPlate : null,
                 'owner_type' => $validated['owner_type'],
                 'photo_path' => null,
                 'is_active' => $validated['is_active'] ?? true,
@@ -194,9 +203,10 @@ class VehicleController extends Controller
         $validated = $request->validate([
             'vehicle_type_id' => ['sometimes', 'required', 'integer', 'exists:vehicle_types,id'],
             'apartment_id' => ['sometimes', 'nullable', 'integer', 'exists:apartments,id'],
+            'has_plate' => ['sometimes', 'boolean'],
             'plate' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'string',
                 'max:20',
                 Rule::unique('vehicles', 'plate')
@@ -216,9 +226,19 @@ class VehicleController extends Controller
             $this->resolveApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
         }
 
-        if (array_key_exists('plate', $validated)) {
-            $validated['plate'] = strtoupper(trim($validated['plate']));
+        $hasPlate = array_key_exists('has_plate', $validated) ? (bool) $validated['has_plate'] : (bool) $vehicle->has_plate;
+        $normalizedPlate = array_key_exists('plate', $validated)
+            ? $this->normalizeVehiclePlate($validated['plate'])
+            : $this->normalizeVehiclePlate($vehicle->plate);
+
+        if ($hasPlate && $normalizedPlate === null) {
+            throw ValidationException::withMessages([
+                'plate' => ['La placa es obligatoria cuando el vehículo sí tiene placa.'],
+            ]);
         }
+
+        $validated['has_plate'] = $hasPlate;
+        $validated['plate'] = $hasPlate ? $normalizedPlate : null;
 
         unset($validated['photo']);
 
@@ -368,6 +388,13 @@ class VehicleController extends Controller
         }
 
         return Storage::disk('public')->url($path);
+    }
+
+    private function normalizeVehiclePlate(?string $plate): ?string
+    {
+        $normalized = strtoupper(trim((string) $plate));
+
+        return $normalized !== '' ? $normalized : null;
     }
 }
 

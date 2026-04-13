@@ -19,6 +19,7 @@ class Vehicle extends Model
         'condominium_id',
         'vehicle_type_id',
         'apartment_id',
+        'has_plate',
         'plate',
         'owner_type',
         'photo_path',
@@ -26,6 +27,7 @@ class Vehicle extends Model
     ];
 
     protected $casts = [
+        'has_plate' => 'boolean',
         'is_active' => 'boolean',
     ];
 
