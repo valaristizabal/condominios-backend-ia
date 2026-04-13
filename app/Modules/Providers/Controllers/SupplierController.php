@@ -4,6 +4,7 @@ namespace App\Modules\Providers\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Providers\Models\Supplier;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -204,6 +205,32 @@ class SupplierController extends Controller
         ]);
     }
 
+    public function import(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->activeCondominium($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $file = $validated['file'];
+        if (! $file instanceof UploadedFile) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible leer el archivo CSV cargado.'],
+            ]);
+        }
+
+        [$total, $created, $failed, $errors] = $this->importCsvFile($file, $activeCondominiumId);
+
+        return response()->json([
+            'total' => $total,
+            'created' => $created,
+            'failed' => $failed,
+            'errors' => $errors,
+        ]);
+    }
+
     private function nullableTrim(?string $value): ?string
     {
         $trimmed = trim((string) $value);
@@ -294,6 +321,229 @@ class SupplierController extends Controller
         }
 
         return $supplier;
+    }
+
+    private function importCsvFile(UploadedFile $file, int $activeCondominiumId): array
+    {
+        $handle = fopen($file->getRealPath(), 'rb');
+        if (! $handle) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible abrir el archivo CSV.'],
+            ]);
+        }
+
+        try {
+            $this->skipUtf8Bom($handle);
+
+            $delimiter = $this->detectCsvDelimiter($handle);
+            $header = fgetcsv($handle, 0, $delimiter);
+            if (! is_array($header)) {
+                throw ValidationException::withMessages([
+                    'file' => ['El archivo CSV esta vacio o no tiene encabezados validos.'],
+                ]);
+            }
+
+            $normalizedHeader = array_map([$this, 'normalizeCsvHeader'], $header);
+            if (! $this->hasRequiredCsvColumns($normalizedHeader)) {
+                throw ValidationException::withMessages([
+                    'file' => ['El archivo debe incluir las columnas: nombre_proveedor, rut, contacto, telefono, email, direccion, activo.'],
+                ]);
+            }
+
+            $columnIndex = array_flip($normalizedHeader);
+            $existingRuts = Supplier::query()
+                ->where('condominium_id', $activeCondominiumId)
+                ->whereNotNull('rut')
+                ->pluck('rut')
+                ->map(fn ($rut) => mb_strtolower(trim((string) $rut)))
+                ->filter()
+                ->all();
+            $existingRutsLookup = array_fill_keys($existingRuts, true);
+            $fileRutsLookup = [];
+
+            $total = 0;
+            $created = 0;
+            $failed = 0;
+            $errors = [];
+            $rowNumber = 1;
+
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rowNumber++;
+
+                if (! is_array($row) || $this->isCsvRowEmpty($row)) {
+                    continue;
+                }
+
+                $total++;
+
+                $name = $this->csvValue($row, $columnIndex, 'nombre_proveedor');
+                $rut = $this->csvValue($row, $columnIndex, 'rut');
+                $contactName = $this->csvValue($row, $columnIndex, 'contacto');
+                $phone = $this->csvValue($row, $columnIndex, 'telefono');
+                $email = $this->csvValue($row, $columnIndex, 'email');
+                $address = $this->csvValue($row, $columnIndex, 'direccion');
+                $active = $this->csvValue($row, $columnIndex, 'activo');
+
+                if ($name === '' || $rut === '' || $active === '') {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: nombre_proveedor, rut y activo son obligatorios.";
+                    continue;
+                }
+
+                if ($active !== '0' && $active !== '1') {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: activo solo admite valores 1 o 0.";
+                    continue;
+                }
+
+                if ($email !== '' && ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: email no tiene un formato valido.";
+                    continue;
+                }
+
+                $normalizedRut = mb_strtolower(trim($rut));
+                if (isset($existingRutsLookup[$normalizedRut])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el rut '{$rut}' ya existe en la base de datos.";
+                    continue;
+                }
+
+                if (isset($fileRutsLookup[$normalizedRut])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el rut '{$rut}' esta repetido dentro del archivo.";
+                    continue;
+                }
+
+                $validator = validator([
+                    'name' => $name,
+                    'rut' => $rut,
+                    'contact_name' => $contactName !== '' ? $contactName : null,
+                    'phone' => $phone !== '' ? $phone : null,
+                    'email' => $email !== '' ? $email : null,
+                    'address' => $address !== '' ? $address : null,
+                    'is_active' => $active === '1',
+                ], [
+                    'name' => ['required', 'string', 'max:255'],
+                    'rut' => ['required', 'string', 'max:100'],
+                    'contact_name' => ['nullable', 'string', 'max:255'],
+                    'phone' => ['nullable', 'string', 'max:50'],
+                    'email' => ['nullable', 'email', 'max:255'],
+                    'address' => ['nullable', 'string', 'max:255'],
+                    'is_active' => ['required', 'boolean'],
+                ]);
+
+                if ($validator->fails()) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . $validator->errors()->first();
+                    continue;
+                }
+
+                Supplier::query()->create([
+                    'condominium_id' => $activeCondominiumId,
+                    'name' => trim($name),
+                    'rut' => trim($rut),
+                    'contact_name' => $contactName !== '' ? $contactName : null,
+                    'phone' => $phone !== '' ? $phone : null,
+                    'email' => $email !== '' ? $email : null,
+                    'address' => $address !== '' ? $address : null,
+                    'is_active' => $active === '1',
+                ]);
+
+                $fileRutsLookup[$normalizedRut] = true;
+                $existingRutsLookup[$normalizedRut] = true;
+                $created++;
+            }
+
+            return [$total, $created, $failed, $errors];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function hasRequiredCsvColumns(array $header): bool
+    {
+        $required = ['nombre_proveedor', 'rut', 'contacto', 'telefono', 'email', 'direccion', 'activo'];
+
+        foreach ($required as $column) {
+            if (! in_array($column, $header, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function csvValue(array $row, array $columnIndex, string $column): string
+    {
+        $index = $columnIndex[$column] ?? null;
+        if ($index === null) {
+            return '';
+        }
+
+        return $this->normalizeCsvCell($row[$index] ?? '');
+    }
+
+    private function normalizeCsvCell(mixed $value): string
+    {
+        $text = (string) $value;
+
+        if (str_starts_with($text, "\xEF\xBB\xBF")) {
+            $text = substr($text, 3);
+        }
+
+        $text = str_replace("\xC2\xA0", ' ', $text);
+        $text = preg_replace('/[\x00-\x1F\x7F\x{200B}-\x{200D}\x{FEFF}]/u', '', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    private function normalizeCsvHeader(mixed $value): string
+    {
+        $text = $this->normalizeCsvCell($value);
+        $text = mb_strtolower($text, 'UTF-8');
+        $text = preg_replace('/\s+/u', '_', $text) ?? $text;
+
+        return trim($text, '_');
+    }
+
+    private function isCsvRowEmpty(array $row): bool
+    {
+        foreach ($row as $value) {
+            if ($this->normalizeCsvCell($value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function skipUtf8Bom($handle): void
+    {
+        $bom = "\xEF\xBB\xBF";
+        $firstBytes = fread($handle, 3);
+
+        if ($firstBytes !== $bom) {
+            rewind($handle);
+        }
+    }
+
+    private function detectCsvDelimiter($handle): string
+    {
+        $position = ftell($handle);
+        $sample = fgets($handle);
+
+        if ($sample === false) {
+            fseek($handle, $position);
+            return ',';
+        }
+
+        $commaCount = substr_count($sample, ',');
+        $semicolonCount = substr_count($sample, ';');
+
+        fseek($handle, $position);
+
+        return $semicolonCount > $commaCount ? ';' : ',';
     }
 }
 

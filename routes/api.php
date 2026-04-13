@@ -217,6 +217,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
 
         Route::middleware(['inventory.settings'])->group(function () {
             Route::get('/suppliers', [SupplierController::class, 'index']);
+            Route::post('/suppliers/import', [SupplierController::class, 'import']);
             Route::post('/suppliers', [SupplierController::class, 'store']);
             Route::put('/suppliers/{id}', [SupplierController::class, 'update']);
             Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
