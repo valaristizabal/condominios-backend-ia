@@ -11,6 +11,9 @@ use App\Modules\Vehicles\Models\VehicleType;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -108,7 +111,12 @@ class VehicleController extends Controller
             $query->where('plate', 'like', '%'.$validated['plate'].'%');
         }
 
-        return response()->json($query->get());
+        return response()->json(
+            $query
+                ->get()
+                ->map(fn (Vehicle $vehicle) => $this->present($vehicle))
+                ->values()
+        );
     }
 
     public function store(Request $request): JsonResponse
@@ -128,6 +136,7 @@ class VehicleController extends Controller
                 ),
             ],
             'owner_type' => ['required', 'string', Rule::in(['resident', 'visitor', 'provider'])],
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
@@ -149,6 +158,7 @@ class VehicleController extends Controller
                 'apartment_id' => $apartmentId,
                 'plate' => strtoupper(trim($validated['plate'])),
                 'owner_type' => $validated['owner_type'],
+                'photo_path' => null,
                 'is_active' => $validated['is_active'] ?? true,
             ]);
         } catch (QueryException $exception) {
@@ -161,13 +171,14 @@ class VehicleController extends Controller
             throw $exception;
         }
 
-        return response()->json(
-            $vehicle->fresh()->load([
-                'vehicleType:id,name,is_active',
-                'apartment:id,unit_type_id,tower,number,floor',
-            ]),
-            201
-        );
+        if ($request->hasFile('photo')) {
+            $this->replacePhoto($vehicle, $request);
+        }
+
+        return response()->json($this->present($vehicle->fresh()->load([
+            'vehicleType:id,name,is_active',
+            'apartment:id,unit_type_id,tower,number,floor',
+        ])), 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -193,6 +204,7 @@ class VehicleController extends Controller
                     ->ignore($vehicle->id),
             ],
             'owner_type' => ['sometimes', 'required', 'string', Rule::in(['resident', 'visitor', 'provider'])],
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
@@ -208,6 +220,8 @@ class VehicleController extends Controller
             $validated['plate'] = strtoupper(trim($validated['plate']));
         }
 
+        unset($validated['photo']);
+
         try {
             $vehicle->update($validated);
         } catch (QueryException $exception) {
@@ -220,12 +234,14 @@ class VehicleController extends Controller
             throw $exception;
         }
 
-        return response()->json(
-            $vehicle->fresh()->load([
-                'vehicleType:id,name,is_active',
-                'apartment:id,unit_type_id,tower,number,floor',
-            ])
-        );
+        if ($request->hasFile('photo')) {
+            $this->replacePhoto($vehicle, $request);
+        }
+
+        return response()->json($this->present($vehicle->fresh()->load([
+            'vehicleType:id,name,is_active',
+            'apartment:id,unit_type_id,tower,number,floor',
+        ])));
     }
 
     public function toggle(Request $request, int $id): JsonResponse
@@ -299,6 +315,59 @@ class VehicleController extends Controller
         }
 
         return $apartment;
+    }
+
+    private function replacePhoto(Vehicle $vehicle, Request $request): void
+    {
+        if (! $request->hasFile('photo') || ! $this->hasPhotoColumn()) {
+            return;
+        }
+
+        if (! empty($vehicle->photo_path) && ! Str::startsWith($vehicle->photo_path, ['http://', 'https://'])) {
+            Storage::disk('public')->delete($vehicle->photo_path);
+        }
+
+        $path = $request->file('photo')->store(sprintf('condominiums/%d/vehicles/%d', $vehicle->condominium_id, $vehicle->id), 'public');
+
+        $vehicle->photo_path = $path;
+        $vehicle->save();
+    }
+
+    private function present(Vehicle $vehicle): array
+    {
+        $data = $vehicle->toArray();
+        $data['photo'] = $vehicle->photo_path;
+        $data['photo_path'] = $vehicle->photo_path;
+        $data['photo_url'] = $this->hasPhotoColumn()
+            ? $this->resolvePublicStorageUrl($vehicle->photo_path)
+            : null;
+        $data['image_url'] = $data['photo_url'];
+        $data['imageUrl'] = $data['photo_url'];
+
+        return $data;
+    }
+
+    private function hasPhotoColumn(): bool
+    {
+        static $hasPhotoColumn = null;
+        if ($hasPhotoColumn === null) {
+            $hasPhotoColumn = Schema::hasColumn('vehicles', 'photo_path');
+        }
+
+        return $hasPhotoColumn;
+    }
+
+    private function resolvePublicStorageUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://', 'data:image'])) {
+            return $path;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 }
 

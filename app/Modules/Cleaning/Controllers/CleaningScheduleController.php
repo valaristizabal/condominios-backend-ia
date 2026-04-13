@@ -5,6 +5,7 @@ namespace App\Modules\Cleaning\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Cleaning\Models\CleaningArea;
 use App\Modules\Cleaning\Models\CleaningSchedule;
+use App\Modules\Core\Models\Operative;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -24,7 +25,7 @@ class CleaningScheduleController extends Controller
         ]);
 
         $query = CleaningSchedule::query()
-            ->with(['cleaningArea:id,condominium_id,name,is_active'])
+            ->with(['cleaningArea:id,condominium_id,name,is_active', 'assignedUser:id,full_name,email'])
             ->where('condominium_id', $activeCondominiumId)
             ->orderByDesc('id');
 
@@ -55,6 +56,7 @@ class CleaningScheduleController extends Controller
             'cleaning_area_id' => (int) $validated['cleaning_area_id'],
             'name' => trim($validated['name']),
             'description' => $validated['description'] ?? null,
+            'assigned_user_id' => $validated['assigned_user_id'] ?? null,
             'frequency_type' => $validated['frequency_type'],
             'repeat_interval' => (int) ($validated['repeat_interval'] ?? 1),
             'days_of_week' => $this->normalizeDaysOfWeek($validated['days_of_week'] ?? null),
@@ -64,7 +66,7 @@ class CleaningScheduleController extends Controller
         ]);
 
         return response()->json(
-            $schedule->fresh()->load(['cleaningArea:id,condominium_id,name,is_active']),
+            $schedule->fresh()->load(['cleaningArea:id,condominium_id,name,is_active', 'assignedUser:id,full_name,email']),
             201
         );
     }
@@ -90,6 +92,7 @@ class CleaningScheduleController extends Controller
             'start_date',
             'end_date',
             'is_active',
+            'assigned_user_id',
         ] as $field) {
             if (array_key_exists($field, $validated)) {
                 $payload[$field] = $validated[$field];
@@ -112,7 +115,7 @@ class CleaningScheduleController extends Controller
         $schedule->update($payload);
 
         return response()->json(
-            $schedule->fresh()->load(['cleaningArea:id,condominium_id,name,is_active'])
+            $schedule->fresh()->load(['cleaningArea:id,condominium_id,name,is_active', 'assignedUser:id,full_name,email'])
         );
     }
 
@@ -140,6 +143,7 @@ class CleaningScheduleController extends Controller
             'cleaning_area_id' => [...$requiredRule, 'integer', 'exists:cleaning_areas,id'],
             'name' => [...$requiredRule, 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string'],
+            'assigned_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             'frequency_type' => [...$requiredRule, Rule::in($this->allowedFrequencyTypes())],
             'repeat_interval' => ['sometimes', 'integer', 'min:1', 'max:365'],
             'days_of_week' => ['sometimes', 'nullable', 'array'],
@@ -151,6 +155,10 @@ class CleaningScheduleController extends Controller
 
         if (array_key_exists('cleaning_area_id', $validated)) {
             $this->resolveCleaningAreaInActiveCondominium((int) $validated['cleaning_area_id'], $activeCondominiumId);
+        }
+
+        if (array_key_exists('assigned_user_id', $validated) && ! empty($validated['assigned_user_id'])) {
+            $this->resolveAssignedUserInActiveCondominium((int) $validated['assigned_user_id'], $activeCondominiumId);
         }
 
         $frequencyType = $validated['frequency_type'] ?? null;
@@ -229,6 +237,26 @@ class CleaningScheduleController extends Controller
         }
 
         return $area;
+    }
+
+    private function resolveAssignedUserInActiveCondominium(int $userId, int $activeCondominiumId): void
+    {
+        $exists = Operative::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->whereHas('user.roles', function ($query) use ($activeCondominiumId) {
+                $query->where('roles.name', 'Aseo')
+                    ->where('roles.is_active', true)
+                    ->where('user_role.condominium_id', $activeCondominiumId);
+            })
+            ->exists();
+
+        if (! $exists) {
+            throw ValidationException::withMessages([
+                'assigned_user_id' => ['El responsable no pertenece al condominio activo o no es un operativo activo.'],
+            ]);
+        }
     }
 }
 

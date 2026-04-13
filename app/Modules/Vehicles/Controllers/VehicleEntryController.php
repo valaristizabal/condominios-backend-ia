@@ -30,7 +30,7 @@ class VehicleEntryController extends Controller
 
         $query = VehicleEntry::query()
             ->with([
-                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,is_active',
+                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,photo_path,is_active',
                 'vehicle.vehicleType:id,name,is_active',
                 'vehicle.apartment:id,unit_type_id,tower,number,floor',
                 'registeredBy:id,full_name,email,document_number',
@@ -96,7 +96,7 @@ class VehicleEntryController extends Controller
 
         return response()->json(
             $entry->fresh()->load([
-                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,is_active',
+                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,photo_path,is_active',
                 'vehicle.vehicleType:id,name,is_active',
                 'vehicle.apartment:id,unit_type_id,tower,number,floor',
                 'registeredBy:id,full_name,email,document_number',
@@ -129,7 +129,7 @@ class VehicleEntryController extends Controller
 
         return response()->json(
             $entry->fresh()->load([
-                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,is_active',
+                'vehicle:id,condominium_id,vehicle_type_id,apartment_id,plate,owner_type,photo_path,is_active',
                 'vehicle.vehicleType:id,name,is_active',
                 'vehicle.apartment:id,unit_type_id,tower,number,floor',
                 'registeredBy:id,full_name,email,document_number',

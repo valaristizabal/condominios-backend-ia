@@ -57,7 +57,7 @@ class CleaningRecord extends Model
         return $this->hasMany(CleaningChecklistItem::class);
     }
 
-    /* Scopes �tiles */
+    /* Scopes útiles */
 
     public function scopePending($query)
     {

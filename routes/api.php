@@ -160,9 +160,11 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         // Checklist template por area (nuevas rutas)
         Route::get('/cleaning-areas/{areaId}/checklists', [CleaningAreaChecklistController::class, 'index']);
         Route::post('/cleaning-areas/{areaId}/checklists', [CleaningAreaChecklistController::class, 'store']);
+        Route::put('/cleaning-areas/{areaId}/checklists/{itemId}', [CleaningAreaChecklistController::class, 'update']);
         // Compatibilidad con frontend actual
         Route::get('/cleaning-areas/{areaId}/checklist', [CleaningAreaChecklistController::class, 'index']);
         Route::post('/cleaning-areas/{areaId}/checklist', [CleaningAreaChecklistController::class, 'store']);
+        Route::put('/cleaning-areas/{areaId}/checklist/{itemId}', [CleaningAreaChecklistController::class, 'update']);
         Route::delete('/cleaning-areas/{areaId}/checklist/{itemId}', [CleaningAreaChecklistController::class, 'destroy']);
 
         Route::get('/cleaning-records', [CleaningRecordController::class, 'index']);

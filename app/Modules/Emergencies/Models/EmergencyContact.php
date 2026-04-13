@@ -12,6 +12,7 @@ class EmergencyContact extends Model
 
     protected $fillable = [
         'condominium_id',
+        'emergency_type_id',
         'name',
         'phone_number',
         'icon',
@@ -25,6 +26,11 @@ class EmergencyContact extends Model
     public function condominium()
     {
         return $this->belongsTo(Condominium::class);
+    }
+
+    public function emergencyType()
+    {
+        return $this->belongsTo(EmergencyType::class);
     }
 }
 

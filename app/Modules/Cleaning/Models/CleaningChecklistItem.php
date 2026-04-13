@@ -11,6 +11,7 @@ class CleaningChecklistItem extends Model
 
     protected $fillable = [
         'cleaning_record_id',
+        'source_checklist_item_id',
         'item_name',
         'completed',
     ];
@@ -24,6 +25,11 @@ class CleaningChecklistItem extends Model
     public function cleaningRecord()
     {
         return $this->belongsTo(CleaningRecord::class);
+    }
+
+    public function sourceChecklistItem()
+    {
+        return $this->belongsTo(CleaningAreaChecklist::class, 'source_checklist_item_id');
     }
 }
 

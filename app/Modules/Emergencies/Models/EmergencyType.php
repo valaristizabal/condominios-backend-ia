@@ -29,6 +29,11 @@ class EmergencyType extends Model
         return $this->hasMany(HealthIncident::class);
     }
 
+    public function emergencyContacts()
+    {
+        return $this->hasMany(EmergencyContact::class);
+    }
+
     /*Scopes*/
 
     public function scopeActive($query)

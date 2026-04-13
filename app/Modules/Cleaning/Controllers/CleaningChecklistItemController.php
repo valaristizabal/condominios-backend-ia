@@ -149,9 +149,20 @@ class CleaningChecklistItemController extends Controller
             ->where('id', $itemId)
             ->firstOrFail();
 
+        $completed = (bool) $validated['completed'];
+
         $item->update([
-            'completed' => (bool) $validated['completed'],
+            'completed' => $completed,
         ]);
+
+        if ($completed && ! empty($item->source_checklist_item_id)) {
+            $this->syncSourceChecklistItemCompletionForDate(
+                (int) $item->source_checklist_item_id,
+                (int) $activeCondominiumId,
+                (int) $record->cleaning_area_id,
+                (string) $record->cleaning_date
+            );
+        }
 
         return response()->json($item->fresh());
     }
@@ -201,6 +212,23 @@ class CleaningChecklistItemController extends Controller
         }
 
         return $record;
+    }
+
+    private function syncSourceChecklistItemCompletionForDate(
+        int $sourceChecklistItemId,
+        int $activeCondominiumId,
+        int $cleaningAreaId,
+        string $cleaningDate
+    ): void {
+        CleaningChecklistItem::query()
+            ->join('cleaning_records', 'cleaning_records.id', '=', 'cleaning_checklist_items.cleaning_record_id')
+            ->where('cleaning_checklist_items.source_checklist_item_id', $sourceChecklistItemId)
+            ->where('cleaning_records.condominium_id', $activeCondominiumId)
+            ->where('cleaning_records.cleaning_area_id', $cleaningAreaId)
+            ->whereDate('cleaning_records.cleaning_date', $cleaningDate)
+            ->update([
+                'cleaning_checklist_items.completed' => true,
+            ]);
     }
 }
 

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Cleaning\Models;
 use App\Modules\Core\Models\Condominium;
+use App\Modules\Security\Models\User;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,7 @@ class CleaningSchedule extends Model
         'cleaning_area_id',
         'name',
         'description',
+        'assigned_user_id',
         'frequency_type',
         'repeat_interval',
         'days_of_week',
@@ -44,6 +46,11 @@ class CleaningSchedule extends Model
     public function cleaningArea()
     {
         return $this->belongsTo(CleaningArea::class);
+    }
+
+    public function assignedUser()
+    {
+        return $this->belongsTo(User::class, 'assigned_user_id');
     }
 }
 

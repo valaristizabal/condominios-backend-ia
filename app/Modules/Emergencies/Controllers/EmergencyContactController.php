@@ -4,6 +4,7 @@ namespace App\Modules\Emergencies\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Emergencies\Models\EmergencyContact;
+use App\Modules\Emergencies\Models\EmergencyType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,11 +21,13 @@ class EmergencyContactController extends Controller
             'active' => ['nullable', 'boolean'],
             'q' => ['nullable', 'string', 'max:120'],
             'status' => ['nullable', 'string', 'in:all,active,inactive'],
+            'emergency_type_id' => ['nullable', 'integer'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:6'],
         ]);
 
         $query = EmergencyContact::query()
+            ->with(['emergencyType:id,name,level,is_active'])
             ->where('condominium_id', $activeCondominiumId)
             ->orderBy('name');
 
@@ -36,7 +39,8 @@ class EmergencyContactController extends Controller
         $hasPaginationOrFilters = $request->query->has('page')
             || $request->query->has('per_page')
             || $request->query->has('q')
-            || $request->query->has('status');
+            || $request->query->has('status')
+            || $request->query->has('emergency_type_id');
 
         if (! $hasPaginationOrFilters) {
             return response()->json($query->get());
@@ -49,11 +53,18 @@ class EmergencyContactController extends Controller
             $query->where('is_active', false);
         }
 
+        if (! empty($validated['emergency_type_id'])) {
+            $query->where('emergency_type_id', (int) $validated['emergency_type_id']);
+        }
+
         if (! empty($validated['q'])) {
             $search = trim((string) $validated['q']);
             $query->where(function ($subQuery) use ($search) {
-                $subQuery->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('phone_number', 'like', '%' . $search . '%');
+                $subQuery->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('phone_number', 'like', '%'.$search.'%')
+                    ->orWhereHas('emergencyType', function ($typeQuery) use ($search) {
+                        $typeQuery->where('name', 'like', '%'.$search.'%');
+                    });
             });
         }
 
@@ -81,19 +92,33 @@ class EmergencyContactController extends Controller
                     ->where(fn ($query) => $query->where('condominium_id', $activeCondominiumId)),
             ],
             'phone_number' => ['required', 'string', 'max:30'],
+            'emergency_type_id' => ['nullable', 'integer', 'exists:emergency_types,id'],
             'icon' => ['nullable', 'string', 'max:60'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
+        $this->assertEmergencyTypeBelongsToCondominium(
+            $validated['emergency_type_id'] ?? null,
+            $activeCondominiumId
+        );
+
         $contact = EmergencyContact::query()->create([
             'condominium_id' => $activeCondominiumId,
-            'name' => $validated['name'],
-            'phone_number' => $validated['phone_number'],
+            'emergency_type_id' => $validated['emergency_type_id'] ?? null,
+            'name' => trim($validated['name']),
+            'phone_number' => trim($validated['phone_number']),
             'icon' => $validated['icon'] ?? null,
             'is_active' => $validated['is_active'] ?? true,
         ]);
 
-        return response()->json($contact, 201);
+        return response()->json([
+            'data' => $contact->fresh()->load(['emergencyType:id,name,level,is_active']),
+            'warning' => $this->duplicatePhoneWarning(
+                $activeCondominiumId,
+                $validated['phone_number'],
+                (int) $contact->id
+            ),
+        ], 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
@@ -117,13 +142,31 @@ class EmergencyContactController extends Controller
                     ->ignore($contact->id),
             ],
             'phone_number' => ['sometimes', 'required', 'string', 'max:30'],
+            'emergency_type_id' => ['sometimes', 'nullable', 'integer', 'exists:emergency_types,id'],
             'icon' => ['sometimes', 'nullable', 'string', 'max:60'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
 
+        if (array_key_exists('name', $validated)) {
+            $validated['name'] = trim($validated['name']);
+        }
+
+        if (array_key_exists('phone_number', $validated)) {
+            $validated['phone_number'] = trim($validated['phone_number']);
+        }
+
+        if (array_key_exists('emergency_type_id', $validated)) {
+            $this->assertEmergencyTypeBelongsToCondominium($validated['emergency_type_id'], $activeCondominiumId);
+        }
+
         $contact->update($validated);
 
-        return response()->json($contact->fresh());
+        return response()->json([
+            'data' => $contact->fresh()->load(['emergencyType:id,name,level,is_active']),
+            'warning' => array_key_exists('phone_number', $validated)
+                ? $this->duplicatePhoneWarning($activeCondominiumId, $validated['phone_number'], (int) $contact->id)
+                : null,
+        ]);
     }
 
     public function toggle(Request $request, int $id): JsonResponse
@@ -143,7 +186,7 @@ class EmergencyContactController extends Controller
             'message' => $contact->is_active
                 ? 'Contacto de emergencia activado.'
                 : 'Contacto de emergencia desactivado.',
-            'data' => $contact,
+            'data' => $contact->fresh()->load(['emergencyType:id,name,level,is_active']),
         ]);
     }
 
@@ -168,7 +211,37 @@ class EmergencyContactController extends Controller
             ]);
         }
     }
+
+    private function assertEmergencyTypeBelongsToCondominium(?int $emergencyTypeId, int $activeCondominiumId): void
+    {
+        if (! $emergencyTypeId) {
+            return;
+        }
+
+        $belongsToCondominium = EmergencyType::query()
+            ->where('id', $emergencyTypeId)
+            ->where('condominium_id', $activeCondominiumId)
+            ->exists();
+
+        if (! $belongsToCondominium) {
+            throw ValidationException::withMessages([
+                'emergency_type_id' => ['El tipo de emergencia no pertenece al condominio activo.'],
+            ]);
+        }
+    }
+
+    private function duplicatePhoneWarning(int $activeCondominiumId, string $phoneNumber, int $ignoreId = 0): ?string
+    {
+        $duplicates = EmergencyContact::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('phone_number', trim($phoneNumber))
+            ->when($ignoreId > 0, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->count();
+
+        if ($duplicates < 1) {
+            return null;
+        }
+
+        return 'Advertencia: este numero telefonico ya esta asociado a otro contacto de emergencia.';
+    }
 }
-
-
-

@@ -123,6 +123,7 @@ class ProductController extends Controller
     {
         $activeCondominiumId = $this->activeCondominium($request);
         $this->rejectCondominiumIdFromRequest($request);
+        $this->ensureConfigurationDependenciesExist($activeCondominiumId);
 
         $validated = $request->validate([
             'inventory_id' => ['required', 'integer', 'exists:inventories,id'],
@@ -515,6 +516,44 @@ class ProductController extends Controller
         }
 
         return $product;
+    }
+
+    private function ensureConfigurationDependenciesExist(int $activeCondominiumId): void
+    {
+        $missing = [];
+
+        $hasInventories = Inventory::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->exists();
+
+        if (! $hasInventories) {
+            $missing[] = 'ubicaciones de inventario';
+        }
+
+        $hasCategories = InventoryCategory::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->exists();
+
+        if (! $hasCategories) {
+            $missing[] = 'categorias de inventario';
+        }
+
+        $hasSuppliers = Supplier::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->exists();
+
+        if (! $hasSuppliers) {
+            $missing[] = 'proveedores';
+        }
+
+        if (! empty($missing)) {
+            throw ValidationException::withMessages([
+                'configuration' => ['Antes de crear productos debes configurar: '.implode(', ', $missing).'.'],
+            ]);
+        }
     }
 }
 
