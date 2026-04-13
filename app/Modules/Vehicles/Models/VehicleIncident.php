@@ -21,7 +21,13 @@ class VehicleIncident extends Model
         'incident_type',
         'observations',
         'evidence_path',
+        'evidence_paths',
         'resolved',
+    ];
+
+    protected $casts = [
+        'resolved' => 'boolean',
+        'evidence_paths' => 'array',
     ];
 
     /*Relaciones*/
