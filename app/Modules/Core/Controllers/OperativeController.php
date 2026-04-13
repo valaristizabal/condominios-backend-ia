@@ -145,6 +145,7 @@ class OperativeController extends Controller
 
                 $newOperative = Operative::query()->create([
                     'user_id' => $user->id,
+                    'role_id' => $role->id,
                     'condominium_id' => $activeCondominiumId,
                     'position' => $validated['position'] ?? $role->name,
                     'contract_type' => $validated['contract_type'],
@@ -258,6 +259,7 @@ class OperativeController extends Controller
             }
 
             $operativeData = collect($validated)->only([
+                'role_id',
                 'position',
                 'contract_type',
                 'salary',
@@ -679,6 +681,7 @@ class OperativeController extends Controller
 
                         if ($operative) {
                             $operative->update([
+                                'role_id' => $payload['role_id'],
                                 'position' => $payload['position'] ?: $defaultRole->name,
                                 'contract_type' => $payload['contract_type'],
                                 'salary' => $payload['salary'],
@@ -694,6 +697,7 @@ class OperativeController extends Controller
                         } else {
                             Operative::query()->create([
                                 'user_id' => $user->id,
+                                'role_id' => $payload['role_id'],
                                 'condominium_id' => $activeCondominiumId,
                                 'position' => $payload['position'] ?: $defaultRole->name,
                                 'contract_type' => $payload['contract_type'],

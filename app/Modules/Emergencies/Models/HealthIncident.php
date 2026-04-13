@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Modules\Emergencies\Models;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Core\Models\Condominium;
 use App\Modules\Security\Models\User;
 
@@ -18,6 +19,7 @@ class HealthIncident extends Model
     protected $fillable = [
         'condominium_id',
         'emergency_type_id',
+        'apartment_id',
         'reported_by_id',
         'event_type',
         'event_location',
@@ -44,9 +46,14 @@ class HealthIncident extends Model
         return $this->belongsTo(EmergencyType::class);
     }
 
+    public function apartment()
+    {
+        return $this->belongsTo(Apartment::class);
+    }
+
     public function reportedBy()
     {
-        return $this->belongsTo(User::class, 'report    ed_by_id');
+        return $this->belongsTo(User::class, 'reported_by_id');
     }
 
     /*Scopes*/

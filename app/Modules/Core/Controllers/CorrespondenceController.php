@@ -5,6 +5,7 @@ namespace App\Modules\Core\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Core\Models\Apartment;
 use App\Modules\Core\Models\Correspondence;
+use App\Modules\Core\Models\Operative;
 use App\Modules\Residents\Models\Resident;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,9 +38,25 @@ class CorrespondenceController extends Controller
             ->orderByDesc('id')
             ->get(['id', 'user_id', 'apartment_id', 'type', 'is_active']);
 
+        $operatives = Operative::query()
+            ->with(['user:id,full_name,email,document_number', 'role:id,name'])
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'user_id',
+                'role_id',
+                'condominium_id',
+                'position',
+                'contract_type',
+                'is_active',
+            ]);
+
         return response()->json([
             'apartments' => $apartments,
             'residents' => $residents,
+            'operatives' => $operatives,
         ]);
     }
 
@@ -77,7 +94,7 @@ class CorrespondenceController extends Controller
     public function store(Request $request): JsonResponse
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
-        $this->rejectForbiddenFieldsFromRequest($request);
+        $this->rejectForbiddenFieldsFromRequest($request, allowReceivedById: true);
         $this->rejectCreateForbiddenFieldsFromRequest($request);
 
         $validated = $request->validate([
@@ -88,6 +105,7 @@ class CorrespondenceController extends Controller
             'deliver_immediately' => ['nullable', 'boolean'],
             'resident_receiver_id' => ['nullable', 'integer', 'exists:residents,id'],
             'apartment_id' => ['required', 'integer', 'exists:apartments,id'],
+            'received_by_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
         $apartment = $this->resolveApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
@@ -124,6 +142,20 @@ class CorrespondenceController extends Controller
             ? $this->storeDigitalSignatureIfBase64((string) $validated['digital_signature'], $activeCondominiumId)
             : null;
 
+        if (! empty($validated['received_by_id'])) {
+            $validReceivedBy = Operative::query()
+                ->where('condominium_id', $activeCondominiumId)
+                ->where('is_active', true)
+                ->where('user_id', (int) $validated['received_by_id'])
+                ->exists();
+
+            if (! $validReceivedBy) {
+                throw ValidationException::withMessages([
+                    'received_by_id' => ['La persona en turno no pertenece al condominio activo.'],
+                ]);
+            }
+        }
+
         $item = Correspondence::query()->create([
             'condominium_id' => $activeCondominiumId,
             'apartment_id' => (int) $validated['apartment_id'],
@@ -132,7 +164,7 @@ class CorrespondenceController extends Controller
             'evidence_photo' => $evidencePhotoPath,
             'digital_signature' => $storedSignature,
             'status' => $hasImmediateDelivery ? Correspondence::STATUS_DELIVERED : Correspondence::STATUS_RECEIVED,
-            'received_by_id' => $request->user()?->id,
+            'received_by_id' => $validated['received_by_id'] ?? $request->user()?->id,
             'resident_receiver_id' => $residentReceiver?->id,
             'delivered_by_id' => $hasImmediateDelivery ? $request->user()?->id : null,
             'delivered_at' => $hasImmediateDelivery ? now() : null,
@@ -218,16 +250,19 @@ class CorrespondenceController extends Controller
         return $activeCondominiumId;
     }
 
-    private function rejectForbiddenFieldsFromRequest(Request $request): void
+    private function rejectForbiddenFieldsFromRequest(Request $request, bool $allowReceivedById = false): void
     {
         $forbiddenFields = [
             'condominium_id',
             'delivered',
-            'received_by_id',
             'delivered_by_id',
             'status',
             'delivered_at',
         ];
+
+        if (! $allowReceivedById) {
+            $forbiddenFields[] = 'received_by_id';
+        }
 
         foreach ($forbiddenFields as $field) {
             if ($request->query->has($field) || $request->request->has($field)) {

@@ -86,8 +86,8 @@ class EmployeeEntryController extends Controller
             ->paginate($perPage, ['*'], 'active_page', $activePage);
 
         $historyEntries = (clone $baseQuery)
-            ->where('status', self::STATUS_COMPLETED)
-            ->orderByDesc('check_out_at')
+            ->whereIn('status', [self::STATUS_COMPLETED, self::STATUS_CANCELLED])
+            ->orderByDesc('updated_at')
             ->paginate($perPage, ['*'], 'history_page', $historyPage);
 
         return response()->json([

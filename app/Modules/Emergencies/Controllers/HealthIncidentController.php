@@ -4,6 +4,7 @@ namespace App\Modules\Emergencies\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Cleaning\Models\CleaningArea;
+use App\Modules\Core\Models\Apartment;
 use App\Modules\Emergencies\Models\HealthIncident;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,16 +31,26 @@ class HealthIncidentController extends Controller
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
         $this->rejectCondominiumIdFromRequest($request);
+        $validated = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:10'],
+        ]);
 
         $incidents = HealthIncident::query()
             ->with([
                 'emergencyType:id,name,level',
+                'apartment.unitType:id,name',
                 'reportedBy:id,full_name',
             ])
             ->where('condominium_id', $activeCondominiumId)
             ->orderByDesc('event_date')
             ->orderByDesc('id')
-            ->get();
+            ->paginate(
+                (int) ($validated['per_page'] ?? 10),
+                ['*'],
+                'page',
+                (int) ($validated['page'] ?? 1)
+            );
 
         return response()->json($incidents);
     }
@@ -56,18 +67,31 @@ class HealthIncidentController extends Controller
                 Rule::exists('emergency_types', 'id')
                     ->where(fn ($query) => $query->where('condominium_id', $activeCondominiumId)),
             ],
+            'apartment_id' => ['required', 'integer', 'exists:apartments,id'],
             'event_type' => ['required', 'string', 'max:100'],
             'event_location' => ['nullable', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
+            'description' => ['required', 'string'],
             'event_date' => ['required', 'date'],
             'reported_by_id' => ['prohibited'],
             'status' => ['prohibited'],
             'resolved_at' => ['prohibited'],
         ]);
 
+        $apartmentBelongsToTenant = Apartment::query()
+            ->where('id', (int) $validated['apartment_id'])
+            ->where('condominium_id', $activeCondominiumId)
+            ->exists();
+
+        if (! $apartmentBelongsToTenant) {
+            throw ValidationException::withMessages([
+                'apartment_id' => ['La unidad no pertenece al condominio activo.'],
+            ]);
+        }
+
         $incident = HealthIncident::query()->create([
             'condominium_id' => $activeCondominiumId,
             'emergency_type_id' => (int) $validated['emergency_type_id'],
+            'apartment_id' => (int) $validated['apartment_id'],
             'reported_by_id' => $request->user()->id,
             'event_type' => $validated['event_type'],
             'event_location' => $validated['event_location'] ?? null,
@@ -80,6 +104,7 @@ class HealthIncidentController extends Controller
         return response()->json(
             $incident->load([
                 'emergencyType:id,name,level',
+                'apartment.unitType:id,name',
                 'reportedBy:id,full_name',
             ]),
             201
@@ -113,7 +138,7 @@ class HealthIncidentController extends Controller
 
         return response()->json([
             'message' => 'Emergencia actualizada a en progreso.',
-            'data' => $incident->fresh(['emergencyType:id,name,level', 'reportedBy:id,full_name']),
+            'data' => $incident->fresh(['emergencyType:id,name,level', 'apartment.unitType:id,name', 'reportedBy:id,full_name']),
         ]);
     }
 
@@ -139,7 +164,7 @@ class HealthIncidentController extends Controller
 
         return response()->json([
             'message' => 'Emergencia cerrada correctamente.',
-            'data' => $incident->fresh(['emergencyType:id,name,level', 'reportedBy:id,full_name']),
+            'data' => $incident->fresh(['emergencyType:id,name,level', 'apartment.unitType:id,name', 'reportedBy:id,full_name']),
         ]);
     }
 

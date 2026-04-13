@@ -2,6 +2,7 @@
 
 namespace App\Modules\Core\Models;
 use App\Modules\Cleaning\Models\CleaningRecord;
+use App\Modules\Security\Models\Role;
 use App\Modules\Security\Models\User;
 
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,7 @@ class Operative extends Model
 
     protected $fillable = [
         'user_id',
+        'role_id',
         'condominium_id',
         'position',
         'contract_type',
@@ -40,6 +42,11 @@ class Operative extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function role()
+    {
+        return $this->belongsTo(Role::class);
     }
 
     // Relación con condominio
