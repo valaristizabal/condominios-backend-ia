@@ -69,6 +69,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
 
         Route::get('/residents', [ResidentController::class, 'index']);
         Route::post('/residents', [ResidentController::class, 'store']);
+        Route::post('/residents/import', [ResidentController::class, 'import']);
         Route::put('/residents/{id}', [ResidentController::class, 'update']);
 
         Route::get('/unit-types', [UnitTypeController::class, 'index']);
@@ -225,7 +226,6 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         });
     });
 });
-
 
 
 

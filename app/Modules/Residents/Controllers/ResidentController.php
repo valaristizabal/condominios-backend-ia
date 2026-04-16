@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Core\Models\Apartment;
 use App\Modules\Residents\Models\Resident;
 use App\Modules\Security\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -203,6 +204,32 @@ class ResidentController extends Controller
         ]));
     }
 
+    public function import(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+        ]);
+
+        $file = $validated['file'];
+        if (! $file instanceof UploadedFile) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible leer el archivo CSV cargado.'],
+            ]);
+        }
+
+        [$created, $updated, $failed, $errors] = $this->importCsvFile($file, $activeCondominiumId);
+
+        return response()->json([
+            'created' => $created,
+            'updated' => $updated,
+            'failed' => $failed,
+            'errors' => $errors,
+        ]);
+    }
+
     private function resolveActiveCondominiumId(Request $request): int
     {
         $activeCondominiumId = (int) $request->attributes->get('activeCondominiumId');
@@ -286,8 +313,361 @@ class ResidentController extends Controller
             'is_platform_admin' => false,
         ]);
     }
+
+    private function importCsvFile(UploadedFile $file, int $activeCondominiumId): array
+    {
+        $handle = fopen($file->getRealPath(), 'rb');
+
+        if (! $handle) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible abrir el archivo CSV.'],
+            ]);
+        }
+
+        $created = 0;
+        $updated = 0;
+        $failed = 0;
+        $errors = [];
+
+        try {
+            $this->skipUtf8Bom($handle);
+            $delimiter = $this->detectCsvDelimiter($handle);
+            $header = fgetcsv($handle, 0, $delimiter);
+
+            if (! is_array($header)) {
+                throw ValidationException::withMessages([
+                    'file' => ['El archivo CSV esta vacio o no tiene encabezados validos.'],
+                ]);
+            }
+
+            $normalizedHeader = array_map([$this, 'normalizeCsvHeader'], $header);
+            $requiredColumns = [
+                'nombre_completo',
+                'email',
+                'documento',
+                'celular',
+                'fecha_nacimiento',
+                'tipo_residente',
+                'tipo_inmueble',
+                'torre',
+                'numero',
+                'activo',
+            ];
+
+            foreach ($requiredColumns as $requiredColumn) {
+                if (! in_array($requiredColumn, $normalizedHeader, true)) {
+                    throw ValidationException::withMessages([
+                        'file' => ['El archivo debe incluir todas las columnas requeridas para residentes.'],
+                    ]);
+                }
+            }
+
+            $columnIndex = array_flip($normalizedHeader);
+            $rowNumber = 1;
+            $seenDocuments = [];
+            $seenEmails = [];
+
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rowNumber++;
+
+                if (! is_array($row) || $this->isCsvRowEmpty($row)) {
+                    continue;
+                }
+
+                try {
+                    $payload = [
+                        'full_name' => $this->csvValue($row, $columnIndex, 'nombre_completo'),
+                        'email' => Str::lower($this->csvValue($row, $columnIndex, 'email')),
+                        'document_number' => $this->csvValue($row, $columnIndex, 'documento'),
+                        'phone' => $this->csvValue($row, $columnIndex, 'celular'),
+                        'birth_date' => $this->normalizeCsvDate(
+                            $this->csvValue($row, $columnIndex, 'fecha_nacimiento'),
+                            'fecha_nacimiento'
+                        ),
+                        'type' => $this->normalizeResidentType($this->csvValue($row, $columnIndex, 'tipo_residente')),
+                        'unit_type_name' => $this->csvValue($row, $columnIndex, 'tipo_inmueble'),
+                        'tower' => $this->csvValue($row, $columnIndex, 'torre'),
+                        'number' => $this->csvValue($row, $columnIndex, 'numero'),
+                        'is_active' => $this->normalizeBooleanCsvValue($this->csvValue($row, $columnIndex, 'activo'), 'activo'),
+                    ];
+                } catch (ValidationException $exception) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . collect($exception->errors())->flatten()->first();
+                    continue;
+                }
+
+                if (isset($seenDocuments[$payload['document_number']])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el documento {$payload['document_number']} esta duplicado dentro del archivo.";
+                    continue;
+                }
+                $seenDocuments[$payload['document_number']] = true;
+
+                if (isset($seenEmails[$payload['email']])) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el correo {$payload['email']} esta duplicado dentro del archivo.";
+                    continue;
+                }
+                $seenEmails[$payload['email']] = true;
+
+                $apartment = Apartment::query()
+                    ->with('unitType:id,name,allows_residents,requires_parent')
+                    ->where('condominium_id', $activeCondominiumId)
+                    ->where('number', $payload['number'])
+                    ->where(function ($query) use ($payload) {
+                        $tower = trim((string) $payload['tower']);
+                        if ($tower === '') {
+                            $query->whereNull('tower')->orWhere('tower', '');
+                            return;
+                        }
+
+                        $query->where('tower', $tower);
+                    })
+                    ->first();
+
+                if (! $apartment) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: no existe un inmueble con torre '{$payload['tower']}' y numero '{$payload['number']}' en el condominio activo.";
+                    continue;
+                }
+
+                if (! $apartment->isPrimaryApartment()) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el inmueble '{$payload['number']}' no permite registrar residentes directos.";
+                    continue;
+                }
+
+                $payloadUnitTypeName = $this->normalizeUnitTypeNameForComparison($payload['unit_type_name']);
+                if ($payloadUnitTypeName !== '') {
+                    $actualUnitTypeName = $this->normalizeUnitTypeNameForComparison((string) $apartment->unitType?->name);
+                    if ($payloadUnitTypeName !== $actualUnitTypeName) {
+                        $failed++;
+                        $errors[] = "Fila {$rowNumber}: el tipo de inmueble no coincide con la unidad encontrada.";
+                        continue;
+                    }
+                }
+
+                $existingUserByDocument = User::query()
+                    ->where('document_number', $payload['document_number'])
+                    ->first();
+                $existingUserByEmail = User::query()
+                    ->where('email', $payload['email'])
+                    ->first();
+
+                if (
+                    $existingUserByDocument &&
+                    $existingUserByEmail &&
+                    (int) $existingUserByDocument->id !== (int) $existingUserByEmail->id
+                ) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: el documento y el correo pertenecen a usuarios diferentes.";
+                    continue;
+                }
+
+                $existingUser = $existingUserByDocument ?: $existingUserByEmail;
+                $validationRules = [
+                    'full_name' => ['required', 'string', 'max:255'],
+                    'email' => ['required', 'email', 'max:255'],
+                    'document_number' => ['required', 'string', 'max:50'],
+                    'phone' => ['nullable', 'string', 'max:30'],
+                    'birth_date' => ['nullable', 'date'],
+                    'type' => ['required', Rule::in(['propietario', 'arrendatario'])],
+                    'is_active' => ['required', 'boolean'],
+                ];
+
+                if ($existingUser) {
+                    $validationRules['email'][] = Rule::unique('users', 'email')->ignore($existingUser->id);
+                    $validationRules['document_number'][] = Rule::unique('users', 'document_number')->ignore($existingUser->id);
+                } else {
+                    $validationRules['email'][] = 'unique:users,email';
+                    $validationRules['document_number'][] = 'unique:users,document_number';
+                }
+
+                $validator = validator($payload, $validationRules);
+
+                if ($validator->fails()) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . $validator->errors()->first();
+                    continue;
+                }
+
+                try {
+                    $wasUpdated = false;
+
+                    DB::transaction(function () use ($payload, $apartment, &$wasUpdated): void {
+                        $user = $this->resolveOrCreateUser($payload);
+
+                        $resident = Resident::query()
+                            ->where('user_id', $user->id)
+                            ->where('apartment_id', $apartment->id)
+                            ->first();
+
+                        if ($resident) {
+                            $resident->update([
+                                'type' => $payload['type'],
+                                'is_active' => $payload['is_active'],
+                            ]);
+                            $wasUpdated = true;
+                            return;
+                        }
+
+                        Resident::query()->create([
+                            'user_id' => $user->id,
+                            'apartment_id' => $apartment->id,
+                            'type' => $payload['type'],
+                            'is_active' => $payload['is_active'],
+                        ]);
+                    });
+
+                    if ($wasUpdated) {
+                        $updated++;
+                    } else {
+                        $created++;
+                    }
+                } catch (\Throwable) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: no fue posible crear o actualizar el residente.";
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return [$created, $updated, $failed, $errors];
+    }
+
+    private function skipUtf8Bom($handle): void
+    {
+        $bom = "\xEF\xBB\xBF";
+        $firstBytes = fread($handle, 3);
+
+        if ($firstBytes !== $bom) {
+            rewind($handle);
+        }
+    }
+
+    private function detectCsvDelimiter($handle): string
+    {
+        $position = ftell($handle);
+        $sample = fgets($handle);
+
+        if ($sample === false) {
+            fseek($handle, $position);
+            return ',';
+        }
+
+        $commaCount = substr_count($sample, ',');
+        $semicolonCount = substr_count($sample, ';');
+
+        fseek($handle, $position);
+
+        return $semicolonCount > $commaCount ? ';' : ',';
+    }
+
+    private function normalizeCsvHeader(mixed $value): string
+    {
+        $text = $this->normalizeCsvCell($value);
+        $text = Str::of($text)->lower()->ascii()->value();
+        $text = preg_replace('/\s+/u', '_', $text) ?? $text;
+
+        return trim($text, '_');
+    }
+
+    private function normalizeCsvCell(mixed $value): string
+    {
+        $text = trim((string) $value);
+        $text = str_replace("\xC2\xA0", ' ', $text);
+
+        return trim($text);
+    }
+
+    private function csvValue(array $row, array $columnIndex, string $column): string
+    {
+        $index = $columnIndex[$column] ?? null;
+
+        if ($index === null) {
+            return '';
+        }
+
+        return $this->normalizeCsvCell($row[$index] ?? '');
+    }
+
+    private function isCsvRowEmpty(array $row): bool
+    {
+        foreach ($row as $value) {
+            if ($this->normalizeCsvCell($value) !== '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizeCsvDate(string $value, string $fieldName): ?string
+    {
+        $normalizedValue = trim($value);
+
+        if ($normalizedValue === '') {
+            return null;
+        }
+
+        foreach (['Y-m-d', 'j/n/Y', 'j/m/Y', 'd/n/Y', 'd/m/Y'] as $format) {
+            $date = \DateTime::createFromFormat($format, $normalizedValue);
+            if ($date instanceof \DateTime) {
+                return $date->format('Y-m-d');
+            }
+        }
+
+        $timestamp = strtotime($normalizedValue);
+        if ($timestamp !== false) {
+            return date('Y-m-d', $timestamp);
+        }
+
+        throw ValidationException::withMessages([
+            $fieldName => ["La fecha '{$normalizedValue}' no es valida. Formatos permitidos: YYYY-MM-DD o DD/MM/YYYY."],
+        ]);
+    }
+
+    private function normalizeResidentType(string $value): string
+    {
+        $normalized = Str::of($value)->lower()->ascii()->trim()->value();
+
+        return match ($normalized) {
+            'propietario', 'propietaria' => 'propietario',
+            'arrendatario', 'arrendataria', 'inquilino', 'inquilina' => 'arrendatario',
+            default => throw ValidationException::withMessages([
+                'tipo_residente' => ["El tipo_residente '{$value}' no es valido. Valores permitidos: propietario o arrendatario."],
+            ]),
+        };
+    }
+
+    private function normalizeBooleanCsvValue(string $value, string $fieldName): bool
+    {
+        $normalized = Str::of($value)->lower()->ascii()->trim()->value();
+
+        if (in_array($normalized, ['1', 'true', 'si', 'yes', 'activo'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['0', 'false', 'no', 'inactivo'], true)) {
+            return false;
+        }
+
+        throw ValidationException::withMessages([
+            $fieldName => ["El campo {$fieldName} debe ser 1/0, true/false o activo/inactivo."],
+        ]);
+    }
+
+    private function normalizeUnitTypeNameForComparison(string $value): string
+    {
+        return Str::of($value)
+            ->lower()
+            ->ascii()
+            ->replaceMatches('/[^a-z0-9]+/', ' ')
+            ->trim()
+            ->replace(' ', '')
+            ->value();
+    }
 }
-
-
 
 
