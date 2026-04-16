@@ -118,7 +118,13 @@ class OperativeController extends Controller
             'salary' => ['nullable', 'numeric', 'gt:0'],
             'financial_institution' => ['nullable', 'string', 'max:120'],
             'account_type' => ['nullable', Rule::in(['ahorros', 'corriente'])],
-            'account_number' => ['nullable', 'string', 'max:60'],
+            'account_number' => [
+                'nullable',
+                'string',
+                'max:60',
+                Rule::unique('operatives', 'account_number')
+                    ->where(fn ($query) => $query->where('condominium_id', $activeCondominiumId)),
+            ],
             'eps' => ['nullable', 'string', 'max:120'],
             'arl' => ['nullable', 'string', 'max:120'],
             'contract_start_date' => ['nullable', 'date', 'before_or_equal:today'],
@@ -213,7 +219,14 @@ class OperativeController extends Controller
             'salary' => ['nullable', 'numeric', 'gt:0'],
             'financial_institution' => ['nullable', 'string', 'max:120'],
             'account_type' => ['nullable', Rule::in(['ahorros', 'corriente'])],
-            'account_number' => ['nullable', 'string', 'max:60'],
+            'account_number' => [
+                'nullable',
+                'string',
+                'max:60',
+                Rule::unique('operatives', 'account_number')
+                    ->where(fn ($query) => $query->where('condominium_id', $activeCondominiumId))
+                    ->ignore($operative->id, 'id'),
+            ],
             'eps' => ['nullable', 'string', 'max:120'],
             'arl' => ['nullable', 'string', 'max:120'],
             'contract_start_date' => ['nullable', 'date', 'before_or_equal:today'],
@@ -434,6 +447,7 @@ class OperativeController extends Controller
     private function validationMessages(): array
     {
         return [
+            'account_number.unique' => 'Ya existe un operativo con este numero de cuenta en el condominio activo.',
             'document_number.unique' => 'Ya existe un operativo con este número de documento.',
             'phone.regex' => 'El celular debe contener solo números.',
             'phone.between' => 'El celular debe tener entre 10 y 15 dígitos.',
@@ -904,9 +918,5 @@ class OperativeController extends Controller
         return true;
     }
 }
-
-
-
-
 
 
