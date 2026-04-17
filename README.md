@@ -42,6 +42,46 @@ El backend bloquea esa combinacion en `UnitTypeController`.
 - Esta validacion se ejecuta en `ResidentController`.
 - No se confia en el frontend para esta regla.
 
+#### Campos extendidos de residentes
+
+Se agregaron campos de negocio en `residents`:
+
+- `administration_fee` (nullable, numerico)
+- `administration_maturity` (nullable, date)
+- `property_owner_full_name` (nullable)
+- `property_owner_document_number` (nullable)
+- `property_owner_email` (nullable)
+- `property_owner_phone` (nullable)
+- `property_owner_birth_date` (nullable, date)
+
+Reglas en `store/update`:
+
+- Si `type = arrendatario`:
+  - `property_owner_full_name` requerido
+  - `property_owner_document_number` requerido
+  - `property_owner_email` requerido y valido
+- Si `type = propietario`:
+  - los campos `property_owner_*` se limpian a `null`.
+
+#### Importacion CSV de residentes
+
+Se mantiene compatibilidad con archivos CSV actuales.
+
+Columnas nuevas opcionales soportadas:
+
+- `administration_fee`
+- `administration_maturity`
+- `property_owner_full_name`
+- `property_owner_document_number`
+- `property_owner_email`
+- `property_owner_phone`
+- `property_owner_birth_date`
+
+Reglas de importacion:
+
+- Si la fila es `arrendatario`, se exige como minimo `property_owner_full_name`.
+- Si la fila es `propietario`, las columnas `property_owner_*` se ignoran y se guardan en `null`.
+
 ### Inmuebles
 
 - Si `unit_type.requires_parent = true`, el inmueble debe enviarse con `parent_id`.

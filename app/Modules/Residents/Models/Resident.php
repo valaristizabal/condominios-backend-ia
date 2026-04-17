@@ -17,11 +17,21 @@ class Resident extends Model
         'user_id',
         'apartment_id',
         'type',
+        'administration_fee',
+        'administration_maturity',
+        'property_owner_full_name',
+        'property_owner_document_number',
+        'property_owner_email',
+        'property_owner_phone',
+        'property_owner_birth_date',
         'is_active',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'administration_fee' => 'decimal:2',
+        'administration_maturity' => 'date',
+        'property_owner_birth_date' => 'date',
     ];
 
     public function user()
@@ -44,6 +54,5 @@ class Resident extends Model
         return $query->where('type', 'arrendatario');
     }
 }
-
 
 

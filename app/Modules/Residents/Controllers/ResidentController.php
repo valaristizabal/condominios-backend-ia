@@ -87,8 +87,16 @@ class ResidentController extends Controller
             'birth_date' => ['nullable', 'date'],
             'apartment_id' => ['required', 'integer', 'exists:apartments,id'],
             'type' => ['required', Rule::in(['propietario', 'arrendatario'])],
+            'administration_fee' => ['nullable', 'numeric'],
+            'administration_maturity' => ['nullable', 'date'],
+            'property_owner_full_name' => ['nullable', 'string', 'max:255', 'required_if:type,arrendatario'],
+            'property_owner_document_number' => ['nullable', 'string', 'max:50', 'required_if:type,arrendatario'],
+            'property_owner_email' => ['nullable', 'email', 'max:255', 'required_if:type,arrendatario'],
+            'property_owner_phone' => ['nullable', 'string', 'max:30'],
+            'property_owner_birth_date' => ['nullable', 'date'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+        $validated = $this->normalizeResidentExtendedFields($validated, (string) $validated['type']);
 
         $apartment = $this->resolvePrimaryApartmentInActiveCondominium(
             (int) $validated['apartment_id'],
@@ -103,6 +111,13 @@ class ResidentController extends Controller
                     'user_id' => $user->id,
                     'apartment_id' => $apartment->id,
                     'type' => $validated['type'],
+                    'administration_fee' => $validated['administration_fee'] ?? null,
+                    'administration_maturity' => $validated['administration_maturity'] ?? null,
+                    'property_owner_full_name' => $validated['property_owner_full_name'] ?? null,
+                    'property_owner_document_number' => $validated['property_owner_document_number'] ?? null,
+                    'property_owner_email' => $validated['property_owner_email'] ?? null,
+                    'property_owner_phone' => $validated['property_owner_phone'] ?? null,
+                    'property_owner_birth_date' => $validated['property_owner_birth_date'] ?? null,
                     'is_active' => $validated['is_active'] ?? true,
                 ]);
 
@@ -155,8 +170,19 @@ class ResidentController extends Controller
             'birth_date' => ['nullable', 'date'],
             'apartment_id' => ['sometimes', 'integer', 'exists:apartments,id'],
             'type' => ['sometimes', Rule::in(['propietario', 'arrendatario'])],
+            'administration_fee' => ['sometimes', 'nullable', 'numeric'],
+            'administration_maturity' => ['sometimes', 'nullable', 'date'],
+            'property_owner_full_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'property_owner_document_number' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'property_owner_email' => ['sometimes', 'nullable', 'email', 'max:255'],
+            'property_owner_phone' => ['sometimes', 'nullable', 'string', 'max:30'],
+            'property_owner_birth_date' => ['sometimes', 'nullable', 'date'],
             'is_active' => ['sometimes', 'boolean'],
         ]);
+
+        $resolvedType = (string) ($validated['type'] ?? $resident->type);
+        $validated = $this->normalizeResidentExtendedFields($validated, $resolvedType);
+        $this->ensureRequiredOwnerFieldsForArrendatario($validated, $resident, $resolvedType);
 
         if (isset($validated['apartment_id'])) {
             $this->resolvePrimaryApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
@@ -179,6 +205,13 @@ class ResidentController extends Controller
                 $residentData = collect($validated)->only([
                     'apartment_id',
                     'type',
+                    'administration_fee',
+                    'administration_maturity',
+                    'property_owner_full_name',
+                    'property_owner_document_number',
+                    'property_owner_email',
+                    'property_owner_phone',
+                    'property_owner_birth_date',
                     'is_active',
                 ])->all();
 
@@ -314,6 +347,79 @@ class ResidentController extends Controller
         ]);
     }
 
+    private function normalizeResidentExtendedFields(array $validated, string $resolvedType): array
+    {
+        $ownerFields = [
+            'property_owner_full_name',
+            'property_owner_document_number',
+            'property_owner_email',
+            'property_owner_phone',
+            'property_owner_birth_date',
+        ];
+
+        foreach (['property_owner_full_name', 'property_owner_document_number', 'property_owner_email', 'property_owner_phone'] as $field) {
+            if (array_key_exists($field, $validated) && is_string($validated[$field])) {
+                $validated[$field] = trim($validated[$field]);
+            }
+        }
+
+        if (array_key_exists('property_owner_email', $validated) && is_string($validated['property_owner_email'])) {
+            $validated['property_owner_email'] = Str::lower($validated['property_owner_email']);
+        }
+
+        foreach (['administration_fee', 'administration_maturity', ...$ownerFields] as $nullableField) {
+            if (array_key_exists($nullableField, $validated) && $validated[$nullableField] === '') {
+                $validated[$nullableField] = null;
+            }
+        }
+
+        if ($resolvedType === 'propietario') {
+            foreach ($ownerFields as $ownerField) {
+                $validated[$ownerField] = null;
+            }
+        }
+
+        return $validated;
+    }
+
+    private function ensureRequiredOwnerFieldsForArrendatario(
+        array $validated,
+        Resident $resident,
+        string $resolvedType
+    ): void {
+        if ($resolvedType !== 'arrendatario') {
+            return;
+        }
+
+        $requiredOwnerFields = [
+            'property_owner_full_name' => 'El nombre del propietario es obligatorio para arrendatarios.',
+            'property_owner_document_number' => 'El documento del propietario es obligatorio para arrendatarios.',
+            'property_owner_email' => 'El email del propietario es obligatorio para arrendatarios.',
+        ];
+
+        foreach ($requiredOwnerFields as $field => $message) {
+            $value = array_key_exists($field, $validated)
+                ? $validated[$field]
+                : $resident->{$field};
+
+            if ($value === null || trim((string) $value) === '') {
+                throw ValidationException::withMessages([
+                    $field => [$message],
+                ]);
+            }
+        }
+
+        $ownerEmail = array_key_exists('property_owner_email', $validated)
+            ? $validated['property_owner_email']
+            : $resident->property_owner_email;
+
+        if (! filter_var((string) $ownerEmail, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'property_owner_email' => ['El email del propietario no tiene un formato valido.'],
+            ]);
+        }
+    }
+
     private function importCsvFile(UploadedFile $file, int $activeCondominiumId): array
     {
         $handle = fopen($file->getRealPath(), 'rb');
@@ -353,6 +459,14 @@ class ResidentController extends Controller
                 'numero',
                 'activo',
             ];
+            // Columnas opcionales compatibles para nuevos datos de residentes:
+            // - administration_fee
+            // - administration_maturity
+            // - property_owner_full_name
+            // - property_owner_document_number
+            // - property_owner_email
+            // - property_owner_phone
+            // - property_owner_birth_date
 
             foreach ($requiredColumns as $requiredColumn) {
                 if (! in_array($requiredColumn, $normalizedHeader, true)) {
@@ -389,11 +503,44 @@ class ResidentController extends Controller
                         'tower' => $this->csvValue($row, $columnIndex, 'torre'),
                         'number' => $this->csvValue($row, $columnIndex, 'numero'),
                         'is_active' => $this->normalizeBooleanCsvValue($this->csvValue($row, $columnIndex, 'activo'), 'activo'),
+                        'administration_fee' => $this->normalizeOptionalCsvNumeric(
+                            $this->csvValue($row, $columnIndex, 'administration_fee'),
+                            'administration_fee'
+                        ),
+                        'administration_maturity' => $this->normalizeCsvDate(
+                            $this->csvValue($row, $columnIndex, 'administration_maturity'),
+                            'administration_maturity'
+                        ),
+                        'property_owner_full_name' => $this->csvValue($row, $columnIndex, 'property_owner_full_name'),
+                        'property_owner_document_number' => $this->csvValue($row, $columnIndex, 'property_owner_document_number'),
+                        'property_owner_email' => Str::lower($this->csvValue($row, $columnIndex, 'property_owner_email')),
+                        'property_owner_phone' => $this->csvValue($row, $columnIndex, 'property_owner_phone'),
+                        'property_owner_birth_date' => $this->normalizeCsvDate(
+                            $this->csvValue($row, $columnIndex, 'property_owner_birth_date'),
+                            'property_owner_birth_date'
+                        ),
                     ];
                 } catch (ValidationException $exception) {
                     $failed++;
                     $errors[] = "Fila {$rowNumber}: " . collect($exception->errors())->flatten()->first();
                     continue;
+                }
+
+                // Regla de negocio:
+                // - arrendatario: requiere al menos nombre del propietario
+                // - propietario: ignorar columnas property_owner_*
+                if ($payload['type'] === 'arrendatario') {
+                    if (mb_strlen(trim((string) $payload['property_owner_full_name'])) < 3) {
+                        $failed++;
+                        $errors[] = "Fila {$rowNumber}: property_owner_full_name es obligatorio para arrendatarios (minimo 3 caracteres).";
+                        continue;
+                    }
+                } else {
+                    $payload['property_owner_full_name'] = null;
+                    $payload['property_owner_document_number'] = null;
+                    $payload['property_owner_email'] = null;
+                    $payload['property_owner_phone'] = null;
+                    $payload['property_owner_birth_date'] = null;
                 }
 
                 if (isset($seenDocuments[$payload['document_number']])) {
@@ -473,6 +620,13 @@ class ResidentController extends Controller
                     'birth_date' => ['nullable', 'date'],
                     'type' => ['required', Rule::in(['propietario', 'arrendatario'])],
                     'is_active' => ['required', 'boolean'],
+                    'administration_fee' => ['nullable', 'numeric'],
+                    'administration_maturity' => ['nullable', 'date'],
+                    'property_owner_full_name' => ['nullable', 'string', 'max:255'],
+                    'property_owner_document_number' => ['nullable', 'string', 'max:50'],
+                    'property_owner_email' => ['nullable', 'email', 'max:255'],
+                    'property_owner_phone' => ['nullable', 'string', 'max:30'],
+                    'property_owner_birth_date' => ['nullable', 'date'],
                 ];
 
                 if ($existingUser) {
@@ -505,6 +659,13 @@ class ResidentController extends Controller
                         if ($resident) {
                             $resident->update([
                                 'type' => $payload['type'],
+                                'administration_fee' => $payload['administration_fee'],
+                                'administration_maturity' => $payload['administration_maturity'],
+                                'property_owner_full_name' => $payload['property_owner_full_name'],
+                                'property_owner_document_number' => $payload['property_owner_document_number'],
+                                'property_owner_email' => $payload['property_owner_email'],
+                                'property_owner_phone' => $payload['property_owner_phone'],
+                                'property_owner_birth_date' => $payload['property_owner_birth_date'],
                                 'is_active' => $payload['is_active'],
                             ]);
                             $wasUpdated = true;
@@ -515,6 +676,13 @@ class ResidentController extends Controller
                             'user_id' => $user->id,
                             'apartment_id' => $apartment->id,
                             'type' => $payload['type'],
+                            'administration_fee' => $payload['administration_fee'],
+                            'administration_maturity' => $payload['administration_maturity'],
+                            'property_owner_full_name' => $payload['property_owner_full_name'],
+                            'property_owner_document_number' => $payload['property_owner_document_number'],
+                            'property_owner_email' => $payload['property_owner_email'],
+                            'property_owner_phone' => $payload['property_owner_phone'],
+                            'property_owner_birth_date' => $payload['property_owner_birth_date'],
                             'is_active' => $payload['is_active'],
                         ]);
                     });
@@ -628,6 +796,23 @@ class ResidentController extends Controller
         ]);
     }
 
+    private function normalizeOptionalCsvNumeric(string $value, string $fieldName): ?float
+    {
+        $normalizedValue = trim($value);
+
+        if ($normalizedValue === '') {
+            return null;
+        }
+
+        if (! is_numeric($normalizedValue)) {
+            throw ValidationException::withMessages([
+                $fieldName => ["El campo '{$fieldName}' debe ser numerico."],
+            ]);
+        }
+
+        return (float) $normalizedValue;
+    }
+
     private function normalizeResidentType(string $value): string
     {
         $normalized = Str::of($value)->lower()->ascii()->trim()->value();
@@ -669,5 +854,3 @@ class ResidentController extends Controller
             ->value();
     }
 }
-
-
