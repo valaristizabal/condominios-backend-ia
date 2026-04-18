@@ -2,6 +2,8 @@
 
 namespace App\Modules\Core\Models;
 
+use App\Modules\Portfolio\Models\PortfolioCharge;
+use App\Modules\Portfolio\Models\PortfolioCollection;
 use App\Modules\Residents\Models\Resident;
 use App\Modules\Vehicles\Models\VehicleIncident;
 use Illuminate\Database\Eloquent\Model;
@@ -47,6 +49,16 @@ class Apartment extends Model
     public function vehicleIncidents()
     {
         return $this->hasMany(VehicleIncident::class);
+    }
+
+    public function portfolioCharges()
+    {
+        return $this->hasMany(PortfolioCharge::class);
+    }
+
+    public function portfolioCollections()
+    {
+        return $this->hasMany(PortfolioCollection::class);
     }
 
     public function isPrimaryApartment(): bool

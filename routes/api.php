@@ -29,6 +29,8 @@ use App\Modules\Inventory\Controllers\InventoryController;
 use App\Modules\Inventory\Controllers\InventoryMovementController;
 use App\Modules\Inventory\Controllers\ProductController;
 use App\Modules\Providers\Controllers\SupplierController;
+use App\Modules\Portfolio\Controllers\PortfolioChargeController;
+use App\Modules\Portfolio\Controllers\PortfolioCollectionController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -225,8 +227,21 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
             Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy']);
         });
     });
-});
 
+    Route::prefix('portfolio')->group(function () {
+        Route::get('/summary', [PortfolioChargeController::class, 'summary']);
+        Route::get('/portfolio-status', [PortfolioChargeController::class, 'portfolioStatus']);
+        Route::get('/unit-options', [PortfolioChargeController::class, 'unitOptions']);
+
+        Route::get('/charges', [PortfolioChargeController::class, 'index']);
+        Route::post('/charges', [PortfolioChargeController::class, 'store']);
+        Route::put('/charges/{id}', [PortfolioChargeController::class, 'update']);
+
+        Route::get('/collections', [PortfolioCollectionController::class, 'index']);
+        Route::post('/collections', [PortfolioCollectionController::class, 'store']);
+        Route::get('/collections/{id}', [PortfolioCollectionController::class, 'show']);
+    });
+});
 
 
 
