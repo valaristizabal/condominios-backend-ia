@@ -25,7 +25,7 @@ return new class extends Migration
             $table->decimal('balance', 12, 2);
             $table->date('due_date');
 
-            $table->enum('status', ['al_dia', 'proximo_vencer', 'en_mora', 'pagada'])
+            $table->enum('status', ['al_dia', 'proximo_a_vencer', 'en_mora', 'pagado'])
                 ->default('al_dia');
 
             $table->text('notes')->nullable();
@@ -54,4 +54,3 @@ return new class extends Migration
         Schema::dropIfExists('portfolio_charges');
     }
 };
-

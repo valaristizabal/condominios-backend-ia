@@ -23,7 +23,7 @@ class PortfolioChargeController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:10'],
             'period' => ['nullable', 'string', 'max:10'],
-            'status' => ['nullable', 'in:al_dia,proximo_vencer,en_mora,pagada'],
+            'status' => ['nullable', 'in:al_dia,proximo_a_vencer,en_mora,pagado'],
             'apartment_id' => ['nullable', 'integer'],
         ]);
 
@@ -45,7 +45,12 @@ class PortfolioChargeController extends Controller
             )
             ->when(
                 ! empty($validated['status']),
-                fn ($query) => $query->where('status', $validated['status'])
+                fn ($query) => $this->applyStatusFilter(
+                    $query,
+                    (string) $validated['status'],
+                    now()->toDateString(),
+                    now()->addDays(7)->toDateString()
+                )
             )
             ->orderByDesc('period')
             ->orderByDesc('id')
@@ -248,6 +253,10 @@ class PortfolioChargeController extends Controller
 
         return response()->json([
             'period' => $periodFilter['mode'] === 'all' ? 'all' : substr((string) $periodFilter['period'], 0, 7),
+            'total_recaudado' => $totalCollected,
+            'cartera_pendiente' => $pendingPortfolio,
+            'unidades_en_mora' => $overdueUnits,
+            'vencimientos_proximos' => $upcomingDue,
             'total_collected' => $totalCollected,
             'pending_portfolio' => $pendingPortfolio,
             'overdue_units' => $overdueUnits,
@@ -264,7 +273,7 @@ class PortfolioChargeController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:10'],
             'period' => ['nullable', 'string', 'max:10'],
-            'status' => ['nullable', 'in:al_dia,proximo_vencer,en_mora,pagada'],
+            'status' => ['nullable', 'in:al_dia,proximo_a_vencer,en_mora,pagado'],
             'q' => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -323,14 +332,19 @@ class PortfolioChargeController extends Controller
                 'charge_id' => $charge->id,
                 'apartment_id' => $charge->apartment_id,
                 'unit' => $this->formatApartmentLabel($charge->apartment),
+                'unidad' => $this->formatApartmentLabel($charge->apartment),
                 'owner' => $this->resolveApartmentOwnerName($charge->apartment),
+                'propietario' => $this->resolveApartmentOwnerName($charge->apartment),
                 'period' => $charge->period?->format('Y-m'),
                 'amount_total' => (float) $charge->amount_total,
                 'amount_paid' => (float) $charge->amount_paid,
                 'balance' => (float) $charge->balance,
                 'due_date' => $charge->due_date?->toDateString(),
+                'fecha_vencimiento' => $charge->due_date?->toDateString(),
                 'days_overdue' => $daysOverdue,
+                'dias_en_mora' => $daysOverdue,
                 'status' => $status,
+                'estado' => $status,
             ];
         });
 
@@ -466,7 +480,7 @@ class PortfolioChargeController extends Controller
             ];
         }
 
-        if (mb_strtolower($normalized) === 'all') {
+        if (in_array(mb_strtolower($normalized), ['all', 'historico', 'historial'], true)) {
             return ['mode' => 'all'];
         }
 
@@ -480,7 +494,7 @@ class PortfolioChargeController extends Controller
     {
         $normalizedBalance = round($balance, 2);
         if ($normalizedBalance <= 0) {
-            return 'pagada';
+            return 'pagado';
         }
 
         $today = now()->startOfDay();
@@ -491,7 +505,7 @@ class PortfolioChargeController extends Controller
         }
 
         if ($due->lte($today->copy()->addDays(7))) {
-            return 'proximo_vencer';
+            return 'proximo_a_vencer';
         }
 
         return 'al_dia';
@@ -512,9 +526,9 @@ class PortfolioChargeController extends Controller
     private function applyStatusFilter($query, string $status, string $today, string $upcomingLimit)
     {
         return match ($status) {
-            'pagada' => $query->where('balance', '<=', 0),
+            'pagado' => $query->where('balance', '<=', 0),
             'en_mora' => $query->where('balance', '>', 0)->whereDate('due_date', '<', $today),
-            'proximo_vencer' => $query
+            'proximo_a_vencer' => $query
                 ->where('balance', '>', 0)
                 ->whereDate('due_date', '>=', $today)
                 ->whereDate('due_date', '<=', $upcomingLimit),
@@ -585,4 +599,3 @@ class PortfolioChargeController extends Controller
         return $fallback?->user?->full_name ? (string) $fallback->user->full_name : '-';
     }
 }
-

@@ -120,7 +120,7 @@ class PortfolioCollectionController extends Controller
 
             if ((float) $lockedCharge->balance < $amount) {
                 throw ValidationException::withMessages([
-                    'amount' => ['El valor recaudado supera el saldo pendiente de la deuda mensual.'],
+                    'amount' => ['El valor recaudado supera el saldo pendiente de la deuda mensual. El pago excedente no se aplica automaticamente.'],
                 ]);
             }
 
@@ -202,7 +202,7 @@ class PortfolioCollectionController extends Controller
     {
         $normalizedBalance = round($balance, 2);
         if ($normalizedBalance <= 0) {
-            return 'pagada';
+            return 'pagado';
         }
 
         $today = now()->startOfDay();
@@ -213,7 +213,7 @@ class PortfolioCollectionController extends Controller
         }
 
         if ($due->lte($today->copy()->addDays(7))) {
-            return 'proximo_vencer';
+            return 'proximo_a_vencer';
         }
 
         return 'al_dia';
@@ -233,7 +233,7 @@ class PortfolioCollectionController extends Controller
             ];
         }
 
-        if (mb_strtolower($normalized) === 'all') {
+        if (in_array(mb_strtolower($normalized), ['all', 'historico', 'historial'], true)) {
             return ['mode' => 'all'];
         }
 
@@ -263,15 +263,20 @@ class PortfolioCollectionController extends Controller
             'charge_id' => $collection->charge_id,
             'apartment_id' => $collection->apartment_id,
             'unit' => $this->formatApartmentLabel($collection->apartment),
+            'unidad' => $this->formatApartmentLabel($collection->apartment),
             'owner' => $this->resolveApartmentOwnerName($collection->apartment),
+            'propietario' => $this->resolveApartmentOwnerName($collection->apartment),
             'amount' => (float) $collection->amount,
+            'valor' => (float) $collection->amount,
             'payment_date' => $collection->payment_date?->toDateString(),
+            'fecha_recaudo' => $collection->payment_date?->toDateString(),
             'period' => $collection->charge?->period?->format('Y-m'),
             'evidence_name' => $collection->evidence_name,
             'evidence_path' => $collection->evidence_path,
             'evidence_url' => $this->resolveEvidenceUrl($collection->evidence_path),
             'notes' => $collection->notes,
             'status' => $collection->charge?->status,
+            'estado' => $collection->charge?->status,
             'created_by' => $collection->created_by,
             'created_by_name' => $collection->createdBy?->full_name,
             'created_at' => $collection->created_at?->toDateTimeString(),
@@ -381,4 +386,3 @@ class PortfolioCollectionController extends Controller
         }
     }
 }
-
