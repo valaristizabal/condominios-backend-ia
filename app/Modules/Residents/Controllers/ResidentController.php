@@ -88,7 +88,7 @@ class ResidentController extends Controller
             'apartment_id' => ['required', 'integer', 'exists:apartments,id'],
             'type' => ['required', Rule::in(['propietario', 'arrendatario'])],
             'administration_fee' => ['nullable', 'numeric'],
-            'administration_maturity' => ['nullable', 'date'],
+            'administration_due_day' => ['nullable', 'integer', 'between:1,31'],
             'property_owner_full_name' => ['nullable', 'string', 'max:255', 'required_if:type,arrendatario'],
             'property_owner_document_number' => ['nullable', 'string', 'max:50', 'required_if:type,arrendatario'],
             'property_owner_email' => ['nullable', 'email', 'max:255', 'required_if:type,arrendatario'],
@@ -112,7 +112,7 @@ class ResidentController extends Controller
                     'apartment_id' => $apartment->id,
                     'type' => $validated['type'],
                     'administration_fee' => $validated['administration_fee'] ?? null,
-                    'administration_maturity' => $validated['administration_maturity'] ?? null,
+                    'administration_due_day' => $validated['administration_due_day'] ?? null,
                     'property_owner_full_name' => $validated['property_owner_full_name'] ?? null,
                     'property_owner_document_number' => $validated['property_owner_document_number'] ?? null,
                     'property_owner_email' => $validated['property_owner_email'] ?? null,
@@ -171,7 +171,7 @@ class ResidentController extends Controller
             'apartment_id' => ['sometimes', 'integer', 'exists:apartments,id'],
             'type' => ['sometimes', Rule::in(['propietario', 'arrendatario'])],
             'administration_fee' => ['sometimes', 'nullable', 'numeric'],
-            'administration_maturity' => ['sometimes', 'nullable', 'date'],
+            'administration_due_day' => ['sometimes', 'nullable', 'integer', 'between:1,31'],
             'property_owner_full_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'property_owner_document_number' => ['sometimes', 'nullable', 'string', 'max:50'],
             'property_owner_email' => ['sometimes', 'nullable', 'email', 'max:255'],
@@ -206,7 +206,7 @@ class ResidentController extends Controller
                     'apartment_id',
                     'type',
                     'administration_fee',
-                    'administration_maturity',
+                    'administration_due_day',
                     'property_owner_full_name',
                     'property_owner_document_number',
                     'property_owner_email',
@@ -367,7 +367,7 @@ class ResidentController extends Controller
             $validated['property_owner_email'] = Str::lower($validated['property_owner_email']);
         }
 
-        foreach (['administration_fee', 'administration_maturity', ...$ownerFields] as $nullableField) {
+        foreach (['administration_fee', 'administration_due_day', ...$ownerFields] as $nullableField) {
             if (array_key_exists($nullableField, $validated) && $validated[$nullableField] === '') {
                 $validated[$nullableField] = null;
             }
@@ -461,7 +461,7 @@ class ResidentController extends Controller
             ];
             // Columnas opcionales compatibles para nuevos datos de residentes:
             // - administration_fee
-            // - administration_maturity
+            // - administration_due_day
             // - property_owner_full_name
             // - property_owner_document_number
             // - property_owner_email
@@ -507,9 +507,9 @@ class ResidentController extends Controller
                             $this->csvValue($row, $columnIndex, 'administration_fee'),
                             'administration_fee'
                         ),
-                        'administration_maturity' => $this->normalizeCsvDate(
-                            $this->csvValue($row, $columnIndex, 'administration_maturity'),
-                            'administration_maturity'
+                        'administration_due_day' => $this->normalizeOptionalCsvDueDay(
+                            $this->csvValue($row, $columnIndex, 'administration_due_day'),
+                            'administration_due_day'
                         ),
                         'property_owner_full_name' => $this->csvValue($row, $columnIndex, 'property_owner_full_name'),
                         'property_owner_document_number' => $this->csvValue($row, $columnIndex, 'property_owner_document_number'),
@@ -621,7 +621,7 @@ class ResidentController extends Controller
                     'type' => ['required', Rule::in(['propietario', 'arrendatario'])],
                     'is_active' => ['required', 'boolean'],
                     'administration_fee' => ['nullable', 'numeric'],
-                    'administration_maturity' => ['nullable', 'date'],
+                    'administration_due_day' => ['nullable', 'integer', 'between:1,31'],
                     'property_owner_full_name' => ['nullable', 'string', 'max:255'],
                     'property_owner_document_number' => ['nullable', 'string', 'max:50'],
                     'property_owner_email' => ['nullable', 'email', 'max:255'],
@@ -660,7 +660,7 @@ class ResidentController extends Controller
                             $resident->update([
                                 'type' => $payload['type'],
                                 'administration_fee' => $payload['administration_fee'],
-                                'administration_maturity' => $payload['administration_maturity'],
+                                'administration_due_day' => $payload['administration_due_day'],
                                 'property_owner_full_name' => $payload['property_owner_full_name'],
                                 'property_owner_document_number' => $payload['property_owner_document_number'],
                                 'property_owner_email' => $payload['property_owner_email'],
@@ -677,7 +677,7 @@ class ResidentController extends Controller
                             'apartment_id' => $apartment->id,
                             'type' => $payload['type'],
                             'administration_fee' => $payload['administration_fee'],
-                            'administration_maturity' => $payload['administration_maturity'],
+                            'administration_due_day' => $payload['administration_due_day'],
                             'property_owner_full_name' => $payload['property_owner_full_name'],
                             'property_owner_document_number' => $payload['property_owner_document_number'],
                             'property_owner_email' => $payload['property_owner_email'],
@@ -811,6 +811,30 @@ class ResidentController extends Controller
         }
 
         return (float) $normalizedValue;
+    }
+
+    private function normalizeOptionalCsvDueDay(string $value, string $fieldName): ?int
+    {
+        $normalizedValue = trim($value);
+
+        if ($normalizedValue === '') {
+            return null;
+        }
+
+        if (! ctype_digit($normalizedValue)) {
+            throw ValidationException::withMessages([
+                $fieldName => ["El campo '{$fieldName}' debe ser un numero entero entre 1 y 31."],
+            ]);
+        }
+
+        $day = (int) $normalizedValue;
+        if ($day < 1 || $day > 31) {
+            throw ValidationException::withMessages([
+                $fieldName => ["El campo '{$fieldName}' debe estar entre 1 y 31."],
+            ]);
+        }
+
+        return $day;
     }
 
     private function normalizeResidentType(string $value): string

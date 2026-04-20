@@ -232,6 +232,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         Route::get('/summary', [PortfolioChargeController::class, 'summary']);
         Route::get('/portfolio-status', [PortfolioChargeController::class, 'portfolioStatus']);
         Route::get('/unit-options', [PortfolioChargeController::class, 'unitOptions']);
+        Route::post('/generate-current', [PortfolioChargeController::class, 'generateCurrent']);
 
         Route::get('/charges', [PortfolioChargeController::class, 'index']);
         Route::post('/charges', [PortfolioChargeController::class, 'store']);
@@ -242,9 +243,6 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         Route::get('/collections/{id}', [PortfolioCollectionController::class, 'show']);
     });
 });
-
-
-
 
 
 

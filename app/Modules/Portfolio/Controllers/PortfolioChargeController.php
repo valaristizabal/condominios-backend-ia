@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Core\Models\Apartment;
 use App\Modules\Portfolio\Models\PortfolioCharge;
 use App\Modules\Portfolio\Models\PortfolioCollection;
+use App\Modules\Residents\Models\Resident;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -400,6 +401,121 @@ class PortfolioChargeController extends Controller
         })->values();
 
         return response()->json($rows);
+    }
+
+    public function generateCurrent(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $periodStart = CarbonImmutable::now()->startOfMonth();
+        $normalizedPeriod = $periodStart->toDateString();
+
+        $alreadyGeneratedCount = PortfolioCharge::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->whereDate('period', $normalizedPeriod)
+            ->count();
+
+        if ($alreadyGeneratedCount > 0) {
+            return response()->json([
+                'period' => $periodStart->format('Y-m'),
+                'total_creados' => 0,
+                'total_omitidos' => $alreadyGeneratedCount,
+                'message' => 'La cartera del mes actual ya fue generada',
+            ]);
+        }
+
+        $result = $this->generatePortfolioForPeriod(
+            $activeCondominiumId,
+            $normalizedPeriod,
+            (int) ($request->user()?->id ?? 0)
+        );
+
+        $result['message'] = 'Cartera del mes actual generada correctamente';
+
+        return response()->json($result);
+    }
+
+    private function generatePortfolioForPeriod(
+        int $activeCondominiumId,
+        string $normalizedPeriod,
+        int $generatedByUserId = 0
+    ): array {
+        $periodStart = CarbonImmutable::createFromFormat('Y-m-d', $normalizedPeriod)->startOfMonth();
+        $generatedBy = $generatedByUserId > 0 ? $generatedByUserId : null;
+
+        $existingApartmentIds = PortfolioCharge::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->whereDate('period', $normalizedPeriod)
+            ->pluck('apartment_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $existingApartmentIdSet = array_fill_keys($existingApartmentIds, true);
+
+        $residents = Resident::query()
+            ->where('is_active', true)
+            ->whereNotNull('administration_fee')
+            ->whereNotNull('administration_due_day')
+            ->whereBetween('administration_due_day', [1, 31])
+            ->whereHas('apartment', fn ($query) => $query->where('condominium_id', $activeCondominiumId))
+            ->orderBy('id')
+            ->get([
+                'id',
+                'apartment_id',
+                'administration_fee',
+                'administration_due_day',
+            ])
+            ->keyBy('apartment_id')
+            ->values();
+
+        $totalCreated = 0;
+        $totalSkipped = 0;
+
+        foreach ($residents as $resident) {
+            $apartmentId = (int) $resident->apartment_id;
+
+            if (isset($existingApartmentIdSet[$apartmentId])) {
+                $totalSkipped++;
+                continue;
+            }
+
+            $administrationFee = round((float) $resident->administration_fee, 2);
+            $dueDay = (int) $resident->administration_due_day;
+            $safeDay = min($dueDay, $periodStart->daysInMonth);
+            $dueDate = $periodStart->day($safeDay)->toDateString();
+            $balance = $administrationFee;
+
+            try {
+                PortfolioCharge::query()->create([
+                    'condominium_id' => $activeCondominiumId,
+                    'apartment_id' => $apartmentId,
+                    'period' => $periodStart->toDateString(),
+                    'amount_total' => $administrationFee,
+                    'amount_paid' => 0,
+                    'balance' => $balance,
+                    'due_date' => $dueDate,
+                    'status' => $this->resolveChargeStatus($balance, $dueDate),
+                    'generated_by' => $generatedBy,
+                ]);
+
+                $totalCreated++;
+                $existingApartmentIdSet[$apartmentId] = true;
+            } catch (QueryException $exception) {
+                if ((string) $exception->getCode() === '23000') {
+                    $totalSkipped++;
+                    $existingApartmentIdSet[$apartmentId] = true;
+                    continue;
+                }
+
+                throw $exception;
+            }
+        }
+
+        return [
+            'period' => $periodStart->format('Y-m'),
+            'total_creados' => $totalCreated,
+            'total_omitidos' => $totalSkipped,
+        ];
     }
 
     private function resolveActiveCondominiumId(Request $request): int

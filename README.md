@@ -36,6 +36,23 @@ El backend bloquea esa combinacion en `UnitTypeController`.
 
 ## Reglas operativas
 
+### Recaudo y cartera mensual
+
+- Endpoint seguro de generacion:
+  - `POST /api/portfolio/generate-current`
+- No recibe `period` desde frontend.
+- El backend calcula internamente el periodo actual con fecha del servidor (`now()->format('Y-m')`).
+- Si ya existe cartera para el condominio en el mes actual:
+  - no crea nuevos registros
+  - responde:
+    - `total_creados = 0`
+    - `total_omitidos`
+    - `message = "La cartera del mes actual ya fue generada"`
+- Si no existe cartera del mes actual:
+  - genera por residentes activos con `administration_fee` y `administration_due_day`
+  - evita duplicados por `apartment_id + period`
+  - responde `period`, `total_creados`, `total_omitidos` y mensaje de confirmacion
+
 ### Residentes
 
 - Un residente solo puede registrarse sobre un inmueble cuyo `unit_type.allows_residents = true`.
@@ -47,7 +64,7 @@ El backend bloquea esa combinacion en `UnitTypeController`.
 Se agregaron campos de negocio en `residents`:
 
 - `administration_fee` (nullable, numerico)
-- `administration_maturity` (nullable, date)
+- `administration_due_day` (nullable, integer de 1 a 31)
 - `property_owner_full_name` (nullable)
 - `property_owner_document_number` (nullable)
 - `property_owner_email` (nullable)
@@ -70,7 +87,7 @@ Se mantiene compatibilidad con archivos CSV actuales.
 Columnas nuevas opcionales soportadas:
 
 - `administration_fee`
-- `administration_maturity`
+- `administration_due_day`
 - `property_owner_full_name`
 - `property_owner_document_number`
 - `property_owner_email`

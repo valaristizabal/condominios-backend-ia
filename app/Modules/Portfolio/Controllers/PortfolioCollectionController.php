@@ -289,11 +289,16 @@ class PortfolioCollectionController extends Controller
             return null;
         }
 
-        if (! Storage::disk('public')->exists($path)) {
+        $normalizedPath = ltrim(trim((string) $path), '/');
+        $normalizedPath = preg_replace('#^storage/app/public/#', '', $normalizedPath) ?? $normalizedPath;
+        $normalizedPath = preg_replace('#^public/#', '', $normalizedPath) ?? $normalizedPath;
+        $normalizedPath = preg_replace('#^storage/#', '', $normalizedPath) ?? $normalizedPath;
+
+        if ($normalizedPath === '' || ! Storage::disk('public')->exists($normalizedPath)) {
             return null;
         }
 
-        return Storage::disk('public')->url($path);
+        return asset('storage/' . $normalizedPath);
     }
 
     private function formatApartmentLabel(?Apartment $apartment): string

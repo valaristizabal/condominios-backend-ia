@@ -41,7 +41,10 @@ return new class extends Migration
             $table->index('apartment_id');
             $table->index('payment_date');
             $table->index(['condominium_id', 'payment_date']);
-            $table->index(['condominium_id', 'apartment_id', 'payment_date']);
+            $table->index(
+                ['condominium_id', 'apartment_id', 'payment_date'],
+                'idx_collections_condo_apt_date'
+            );
         });
     }
 
