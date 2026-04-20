@@ -283,6 +283,29 @@ class PortfolioChargeController extends Controller
         $todayDate = $today->toDateString();
         $upcomingLimit = $today->copy()->addDays(7)->toDateString();
 
+        $kpiChargesQuery = PortfolioCharge::query()
+            ->where('condominium_id', $activeCondominiumId);
+
+        if ($periodFilter['mode'] === 'month') {
+            $kpiChargesQuery->whereDate('period', $periodFilter['period']);
+        }
+
+        $totalCharged = round((float) (clone $kpiChargesQuery)->sum('amount_total'), 2);
+        $totalPending = round((float) (clone $kpiChargesQuery)->sum('balance'), 2);
+
+        $kpiCollectionsQuery = PortfolioCollection::query()
+            ->where('condominium_id', $activeCondominiumId);
+
+        if ($periodFilter['mode'] === 'month') {
+            $periodValue = (string) $periodFilter['period'];
+            $kpiCollectionsQuery->whereHas('charge', fn ($query) => $query->whereDate('period', $periodValue));
+        }
+
+        $totalCollected = round((float) $kpiCollectionsQuery->sum('amount'), 2);
+        $collectionRate = $totalCharged > 0
+            ? round(($totalCollected / $totalCharged) * 100, 2)
+            : 0.0;
+
         $query = PortfolioCharge::query()
             ->with([
                 'apartment.unitType:id,name,allows_residents,requires_parent',
@@ -349,7 +372,19 @@ class PortfolioChargeController extends Controller
             ];
         });
 
-        return response()->json($paginator);
+        return response()->json([
+            'kpis' => [
+                'total_charged' => $totalCharged,
+                'total_collected' => $totalCollected,
+                'total_pending' => $totalPending,
+                'porcentaje_recaudo' => $collectionRate,
+            ],
+            'data' => $paginator->items(),
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
     }
 
     public function unitOptions(Request $request): JsonResponse

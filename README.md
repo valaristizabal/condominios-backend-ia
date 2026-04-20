@@ -52,6 +52,11 @@ El backend bloquea esa combinacion en `UnitTypeController`.
   - genera por residentes activos con `administration_fee` y `administration_due_day`
   - evita duplicados por `apartment_id + period`
   - responde `period`, `total_creados`, `total_omitidos` y mensaje de confirmacion
+- Evidencias de recaudo:
+  - los archivos se guardan en disco `public` (ej: `portfolio-collections/...`)
+  - la API responde `evidence_url` publico usando `asset('storage/' . evidence_path)`
+  - no se exponen rutas internas tipo `storage/app/public/...`
+  - requiere enlace de storage (`php artisan storage:link`)
 
 ### Residentes
 
