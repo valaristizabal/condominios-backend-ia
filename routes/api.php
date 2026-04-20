@@ -31,6 +31,7 @@ use App\Modules\Inventory\Controllers\ProductController;
 use App\Modules\Providers\Controllers\SupplierController;
 use App\Modules\Portfolio\Controllers\PortfolioChargeController;
 use App\Modules\Portfolio\Controllers\PortfolioCollectionController;
+use App\Modules\Expenses\Controllers\ExpenseController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -242,8 +243,12 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         Route::post('/collections', [PortfolioCollectionController::class, 'store']);
         Route::get('/collections/{id}', [PortfolioCollectionController::class, 'show']);
     });
-});
 
+    Route::get('/expenses', [ExpenseController::class, 'index']);
+    Route::post('/expenses', [ExpenseController::class, 'store']);
+    Route::put('/expenses/{id}', [ExpenseController::class, 'update']);
+    Route::delete('/expenses/{id}', [ExpenseController::class, 'destroy']);
+});
 
 
 

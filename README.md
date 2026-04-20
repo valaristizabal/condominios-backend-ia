@@ -36,6 +36,62 @@ El backend bloquea esa combinacion en `UnitTypeController`.
 
 ## Reglas operativas
 
+### Gastos administrativos
+
+- Endpoints API (bajo `auth:api` + `resolve.active.condominium`):
+  - `GET /api/expenses`
+  - `POST /api/expenses`
+  - `PUT /api/expenses/{id}`
+  - `DELETE /api/expenses/{id}`
+- No se permite enviar `condominium_id` desde frontend.
+- El backend toma el condominio activo desde `activeCondominiumId`.
+- Soporte de evidencias:
+  - se almacenan en disco `public` usando `store('expenses', 'public')`
+  - en DB se guarda solo `support_path`
+  - la API responde `supportUrl` publico como `asset('storage/' . support_path)`
+  - si no hay archivo (o no existe), `supportUrl` retorna `null`
+  - requiere enlace de storage (`php artisan storage:link`)
+
+#### Validaciones de negocio (ExpenseRequest)
+
+Validaciones aplicadas en `store/update` con `ExpenseRequest`:
+
+- `registeredAt`:
+  - obligatorio (en update: obligatorio solo si se envía)
+  - `date`
+  - `before_or_equal:today` (no futuras)
+- `expenseType`:
+  - obligatorio
+  - permitido: `servicios`, `mantenimiento`, `honorarios`, `papeleria`, `seguridad`, `aseo`
+- `amount`:
+  - obligatorio
+  - `numeric`
+  - `gt:0`
+  - `lt:1000000000`
+- `paymentMethod`:
+  - obligatorio
+  - permitido: `transferencia`, `efectivo`, `debito`, `tarjeta`, `consignacion`
+- `registeredBy`:
+  - obligatorio
+  - `string|min:3|max:255`
+- `observations`:
+  - opcional
+  - `string|max:500`
+- `support`:
+  - opcional
+  - `file|mimes:pdf,jpg,jpeg,png|max:2048` (2MB)
+
+Regla de estado automática:
+
+- si hay soporte: `status = con-soporte`
+- si no hay soporte: `status = pendiente-soporte`
+
+Notas para `update`:
+
+- permite actualizar sin reemplazar archivo
+- si llega nuevo `support`, reemplaza `support_path`
+- si llega `removeSupport=true`, elimina soporte actual
+
 ### Recaudo y cartera mensual
 
 - Endpoint seguro de generacion:
