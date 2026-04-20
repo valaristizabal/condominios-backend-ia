@@ -17,6 +17,67 @@ use Illuminate\Validation\ValidationException;
 
 class ResidentController extends Controller
 {
+    public function debtSummary(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $chargesSubquery = DB::table('portfolio_charges')
+            ->selectRaw('condominium_id, apartment_id, SUM(amount_total) as total_charges')
+            ->where('condominium_id', $activeCondominiumId)
+            ->groupBy('condominium_id', 'apartment_id');
+
+        $paymentsSubquery = DB::table('portfolio_collections')
+            ->selectRaw('condominium_id, apartment_id, SUM(amount) as total_payments')
+            ->where('condominium_id', $activeCondominiumId)
+            ->groupBy('condominium_id', 'apartment_id');
+
+        $rows = Resident::query()
+            ->join('users', 'users.id', '=', 'residents.user_id')
+            ->join('apartments', 'apartments.id', '=', 'residents.apartment_id')
+            ->leftJoinSub($chargesSubquery, 'charges', function ($join) {
+                $join->on('charges.apartment_id', '=', 'residents.apartment_id')
+                    ->on('charges.condominium_id', '=', 'apartments.condominium_id');
+            })
+            ->leftJoinSub($paymentsSubquery, 'payments', function ($join) {
+                $join->on('payments.apartment_id', '=', 'residents.apartment_id')
+                    ->on('payments.condominium_id', '=', 'apartments.condominium_id');
+            })
+            ->where('apartments.condominium_id', $activeCondominiumId)
+            ->selectRaw('
+                residents.id as resident_id,
+                users.full_name as name,
+                apartments.tower as apartment_tower,
+                apartments.number as apartment_number,
+                COALESCE(charges.total_charges, 0) as total_charges,
+                COALESCE(payments.total_payments, 0) as total_payments
+            ')
+            ->orderBy('users.full_name')
+            ->orderBy('residents.id')
+            ->get();
+
+        $payload = $rows->map(function ($row) {
+            $totalCharges = round((float) $row->total_charges, 2);
+            $totalPayments = round((float) $row->total_payments, 2);
+            $debt = round($totalCharges - $totalPayments, 2);
+
+            return [
+                'resident_id' => (int) $row->resident_id,
+                'name' => (string) $row->name,
+                'apartment' => $this->formatApartmentDebtLabel(
+                    $row->apartment_tower,
+                    $row->apartment_number
+                ),
+                'total_charges' => $totalCharges,
+                'total_payments' => $totalPayments,
+                'debt' => $debt,
+                'status' => $debt > 0 ? 'en_mora' : 'al_dia',
+            ];
+        })->values();
+
+        return response()->json($payload);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $activeCondominiumId = $this->resolveActiveCondominiumId($request);
@@ -876,5 +937,21 @@ class ResidentController extends Controller
             ->trim()
             ->replace(' ', '')
             ->value();
+    }
+
+    private function formatApartmentDebtLabel(?string $tower, ?string $number): string
+    {
+        $normalizedTower = trim((string) ($tower ?? ''));
+        $normalizedNumber = trim((string) ($number ?? ''));
+
+        if ($normalizedTower !== '' && $normalizedNumber !== '') {
+            return sprintf('Torre %s-%s', $normalizedTower, $normalizedNumber);
+        }
+
+        if ($normalizedNumber !== '') {
+            return 'Apto ' . $normalizedNumber;
+        }
+
+        return 'Unidad sin definir';
     }
 }
