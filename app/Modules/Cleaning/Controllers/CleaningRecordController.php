@@ -13,6 +13,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -266,9 +267,23 @@ class CleaningRecordController extends Controller
         $this->rejectCondominiumIdFromRequest($request);
         $this->rejectForbiddenManagedFields($request);
 
-        $validated = $request->validate([
-            'observations' => ['required', 'string', 'min:3'],
-        ]);
+        $validated = $request->validate(
+            [
+                'observations' => ['required', 'string', 'min:3'],
+                'evidences' => ['required', 'array', 'min:1'],
+                'evidences.*' => ['image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            ],
+            [
+                'observations.required' => 'La observacion final es obligatoria.',
+                'observations.min' => 'La observacion final debe tener al menos 3 caracteres.',
+                'evidences.required' => 'Debes adjuntar al menos una evidencia.',
+                'evidences.array' => 'Las evidencias deben enviarse como una lista de imagenes.',
+                'evidences.min' => 'Debes adjuntar al menos una evidencia.',
+                'evidences.*.image' => 'Cada evidencia debe ser una imagen valida.',
+                'evidences.*.mimes' => 'Las evidencias solo pueden ser JPG, JPEG, PNG o WEBP.',
+                'evidences.*.max' => 'Cada evidencia debe pesar maximo 5 MB.',
+            ]
+        );
 
         $record = $this->resolveCleaningRecordInActiveCondominium($id, $activeCondominiumId);
 
@@ -299,10 +314,26 @@ class CleaningRecordController extends Controller
             ]);
         }
 
+        $evidencePaths = collect($request->file('evidences', []))
+            ->filter()
+            ->map(fn ($file) => $file->store(
+                sprintf('cleaning/condominium_%d/%s', $activeCondominiumId, now()->format('Y/m/d')),
+                'public'
+            ))
+            ->values()
+            ->all();
+
+        if (empty($evidencePaths)) {
+            throw ValidationException::withMessages([
+                'evidences' => ['Debes adjuntar al menos una evidencia para finalizar la limpieza.'],
+            ]);
+        }
+
         $record->update([
             'observations' => $validated['observations'],
             'status' => self::STATUS_COMPLETED,
             'finished_at' => now(),
+            'evidence_paths' => $evidencePaths,
         ]);
 
         $sourceChecklistItemIds = CleaningChecklistItem::query()

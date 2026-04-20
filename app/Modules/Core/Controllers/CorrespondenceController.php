@@ -351,6 +351,7 @@ class CorrespondenceController extends Controller
     {
         $data = $item->toArray();
         $data['delivered'] = $item->status === Correspondence::STATUS_DELIVERED;
+        $data['evidence_photo_url'] = $this->resolvePublicStorageUrl($item->evidence_photo);
         $data['signature_url'] = $this->resolvePublicStorageUrl($item->digital_signature);
 
         return $data;

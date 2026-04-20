@@ -7,6 +7,7 @@ use App\Modules\Core\Models\Operative;
 use App\Modules\Security\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Str;
 
 class CleaningRecord extends Model
 {
@@ -22,12 +23,18 @@ class CleaningRecord extends Model
         'finished_at',
         'status',
         'observations',
+        'evidence_paths',
     ];
 
     protected $casts = [
         'cleaning_date' => 'date',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
+        'evidence_paths' => 'array',
+    ];
+
+    protected $appends = [
+        'evidence_urls',
     ];
 
     /* Relaciones */
@@ -67,6 +74,23 @@ class CleaningRecord extends Model
     public function scopeCompleted($query)
     {
         return $query->where('status', 'completed');
+    }
+
+    public function getEvidenceUrlsAttribute(): array
+    {
+        $paths = is_array($this->evidence_paths) ? $this->evidence_paths : [];
+
+        return array_values(array_filter(array_map(function ($path) {
+            if (! $path) {
+                return null;
+            }
+
+            if (Str::startsWith($path, ['http://', 'https://', 'data:image'])) {
+                return $path;
+            }
+
+            return asset('storage/'.ltrim((string) $path, '/'));
+        }, $paths)));
     }
 }
 
