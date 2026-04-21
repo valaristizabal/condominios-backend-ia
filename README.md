@@ -120,6 +120,27 @@ Notas para `update`:
 - Esta validacion se ejecuta en `ResidentController`.
 - No se confia en el frontend para esta regla.
 
+#### Resumen de deuda por residente
+
+- Endpoint:
+  - `GET /api/residents/debt-summary`
+- Tenant:
+  - usa `activeCondominiumId`
+  - rechaza `condominium_id` enviado por query/body
+- Calculo:
+  - `total_charges`: suma de `portfolio_charges.amount_total` por apartamento
+  - `total_payments`: suma de `portfolio_collections.amount` por apartamento
+  - `debt`: `total_charges - total_payments`
+  - `status`: `en_mora` si `debt > 0`, si no `al_dia`
+- Respuesta:
+  - `resident_id`
+  - `name`
+  - `apartment`
+  - `total_charges`
+  - `total_payments`
+  - `debt`
+  - `status`
+
 #### Campos extendidos de residentes
 
 Se agregaron campos de negocio en `residents`:
