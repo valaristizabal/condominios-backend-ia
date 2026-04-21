@@ -9,6 +9,8 @@ use App\Modules\Vehicles\Models\VehicleIncident;
 use Illuminate\Database\Eloquent\Model;
 class Apartment extends Model
 {
+    public const OWNER_FALLBACK_LABEL = 'Sin propietario parametrizado';
+
     protected $table = 'apartments';
 
     protected $fillable = [
@@ -44,6 +46,40 @@ class Apartment extends Model
     public function residents()
     {
         return $this->hasMany(Resident::class);
+    }
+
+    public function ownerResident()
+    {
+        return $this->hasOne(Resident::class)
+            ->where('type', 'propietario')
+            ->where('is_active', true)
+            ->oldest('id');
+    }
+
+    public function getOwnerResidentByApartment(): ?Resident
+    {
+        if ($this->relationLoaded('residents')) {
+            return $this->residents->first(
+                fn (Resident $resident) => $resident->type === 'propietario'
+                    && (bool) $resident->is_active
+                    && $resident->user !== null
+            );
+        }
+
+        return $this->residents()
+            ->with('user:id,full_name')
+            ->where('type', 'propietario')
+            ->where('is_active', true)
+            ->oldest('id')
+            ->first();
+    }
+
+    public function resolveOwnerName(): string
+    {
+        $owner = $this->getOwnerResidentByApartment();
+        $ownerName = trim((string) ($owner?->user?->full_name ?? ''));
+
+        return $ownerName !== '' ? $ownerName : self::OWNER_FALLBACK_LABEL;
     }
 
     public function vehicleIncidents()

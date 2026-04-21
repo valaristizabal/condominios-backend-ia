@@ -73,6 +73,7 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
         Route::get('/residents', [ResidentController::class, 'index']);
         Route::get('/residents/debt-summary', [ResidentController::class, 'debtSummary']);
         Route::post('/residents', [ResidentController::class, 'store']);
+        Route::post('/residents/import/preview', [ResidentController::class, 'previewImport']);
         Route::post('/residents/import', [ResidentController::class, 'import']);
         Route::put('/residents/{id}', [ResidentController::class, 'update']);
 
@@ -250,7 +251,6 @@ Route::middleware(['auth:api', 'resolve.active.condominium'])->group(function ()
     Route::put('/expenses/{id}', [ExpenseController::class, 'update']);
     Route::delete('/expenses/{id}', [ExpenseController::class, 'destroy']);
 });
-
 
 
 

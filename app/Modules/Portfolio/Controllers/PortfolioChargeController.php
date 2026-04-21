@@ -736,17 +736,6 @@ class PortfolioChargeController extends Controller
 
     private function resolveApartmentOwnerName(?Apartment $apartment): string
     {
-        if (! $apartment || ! $apartment->relationLoaded('residents')) {
-            return '-';
-        }
-
-        $residents = $apartment->residents ?? collect();
-        $owner = $residents->first(fn ($resident) => $resident->type === 'propietario' && $resident->user);
-        if ($owner?->user?->full_name) {
-            return (string) $owner->user->full_name;
-        }
-
-        $fallback = $residents->first(fn ($resident) => (bool) $resident->user);
-        return $fallback?->user?->full_name ? (string) $fallback->user->full_name : '-';
+        return $apartment?->resolveOwnerName() ?? Apartment::OWNER_FALLBACK_LABEL;
     }
 }

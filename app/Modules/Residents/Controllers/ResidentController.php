@@ -4,6 +4,7 @@ namespace App\Modules\Residents\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Core\Models\Apartment;
+use App\Modules\Core\Models\UnitType;
 use App\Modules\Residents\Models\Resident;
 use App\Modules\Security\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -325,6 +326,7 @@ class ResidentController extends Controller
 
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'auto_create_units' => ['sometimes', 'boolean'],
         ]);
 
         $file = $validated['file'];
@@ -334,14 +336,63 @@ class ResidentController extends Controller
             ]);
         }
 
-        [$created, $updated, $failed, $errors] = $this->importCsvFile($file, $activeCondominiumId);
+        [$created, $updated, $failed, $errors, $warnings, $createdUnits] = $this->importCsvFile(
+            $file,
+            $activeCondominiumId,
+            (bool) ($validated['auto_create_units'] ?? false)
+        );
 
         return response()->json([
             'created' => $created,
             'updated' => $updated,
             'failed' => $failed,
+            'created_units' => $createdUnits,
             'errors' => $errors,
+            'warnings' => $warnings,
         ]);
+    }
+
+    public function previewImport(Request $request): JsonResponse
+    {
+        $activeCondominiumId = $this->resolveActiveCondominiumId($request);
+        $this->rejectCondominiumIdFromRequest($request);
+
+        $validated = $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'auto_create_units' => ['sometimes', 'boolean'],
+        ]);
+
+        $file = $validated['file'];
+        if (! $file instanceof UploadedFile) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible leer el archivo CSV cargado.'],
+            ]);
+        }
+
+        try {
+            return response()->json($this->previewImportCsvFile(
+                $file,
+                $activeCondominiumId,
+                (bool) ($validated['auto_create_units'] ?? false)
+            ));
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'summary' => [
+                    'total_rows' => 0,
+                    'valid_rows' => 0,
+                    'error_rows' => 1,
+                    'new_units' => 0,
+                    'residents_to_create' => 0,
+                    'residents_to_update' => 0,
+                ],
+                'errors' => [$this->firstValidationError($exception)],
+                'warnings' => [],
+                'units_to_create' => [],
+                'rows' => [],
+                'can_import' => false,
+                'auto_create_units' => (bool) ($validated['auto_create_units'] ?? false),
+            ]);
+        }
     }
 
     private function resolveActiveCondominiumId(Request $request): int
@@ -524,7 +575,11 @@ class ResidentController extends Controller
         }
     }
 
-    private function importCsvFile(UploadedFile $file, int $activeCondominiumId): array
+    private function importCsvFile(
+        UploadedFile $file,
+        int $activeCondominiumId,
+        bool $autoCreateUnits = false
+    ): array
     {
         $handle = fopen($file->getRealPath(), 'rb');
 
@@ -538,6 +593,8 @@ class ResidentController extends Controller
         $updated = 0;
         $failed = 0;
         $errors = [];
+        $warnings = [];
+        $createdUnits = 0;
 
         try {
             $this->skipUtf8Bom($handle);
@@ -584,9 +641,24 @@ class ResidentController extends Controller
             $rowNumber = 1;
             $seenDocuments = [];
             $seenEmails = [];
+            $dataRows = [];
 
             while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
                 $rowNumber++;
+
+                $dataRows[] = [
+                    'rowNumber' => $rowNumber,
+                    'row' => $row,
+                ];
+            }
+
+            $csvOwnerNamesByUnit = $this->buildCsvOwnerNamesByUnit($dataRows, $columnIndex);
+            $unitTypesByName = $this->loadResidentImportUnitTypesByName($activeCondominiumId);
+            $apartmentsByUnit = $this->loadResidentImportApartmentsByUnit($activeCondominiumId);
+
+            foreach ($dataRows as $dataRow) {
+                $rowNumber = (int) $dataRow['rowNumber'];
+                $row = $dataRow['row'];
 
                 if (! is_array($row) || $this->isCsvRowEmpty($row)) {
                     continue;
@@ -631,14 +703,10 @@ class ResidentController extends Controller
                 }
 
                 // Regla de negocio:
-                // - arrendatario: requiere al menos nombre del propietario
+                // - arrendatario: puede compartir unidad con una fila propietario
                 // - propietario: ignorar columnas property_owner_*
                 if ($payload['type'] === 'arrendatario') {
-                    if (mb_strlen(trim((string) $payload['property_owner_full_name'])) < 3) {
-                        $failed++;
-                        $errors[] = "Fila {$rowNumber}: property_owner_full_name es obligatorio para arrendatarios (minimo 3 caracteres).";
-                        continue;
-                    }
+                    $payload['property_owner_full_name'] = trim((string) $payload['property_owner_full_name']);
                 } else {
                     $payload['property_owner_full_name'] = null;
                     $payload['property_owner_document_number'] = null;
@@ -649,42 +717,63 @@ class ResidentController extends Controller
 
                 if (isset($seenDocuments[$payload['document_number']])) {
                     $failed++;
-                    $errors[] = "Fila {$rowNumber}: el documento {$payload['document_number']} esta duplicado dentro del archivo.";
+                    $errors[] = "Fila {$rowNumber}: Documento duplicado en CSV: {$payload['document_number']}.";
                     continue;
                 }
                 $seenDocuments[$payload['document_number']] = true;
 
                 if (isset($seenEmails[$payload['email']])) {
                     $failed++;
-                    $errors[] = "Fila {$rowNumber}: el correo {$payload['email']} esta duplicado dentro del archivo.";
+                    $errors[] = "Fila {$rowNumber}: Email duplicado en CSV: {$payload['email']}.";
                     continue;
                 }
                 $seenEmails[$payload['email']] = true;
 
-                $apartment = Apartment::query()
-                    ->with('unitType:id,name,allows_residents,requires_parent')
-                    ->where('condominium_id', $activeCondominiumId)
-                    ->where('number', $payload['number'])
-                    ->where(function ($query) use ($payload) {
-                        $tower = trim((string) $payload['tower']);
-                        if ($tower === '') {
-                            $query->whereNull('tower')->orWhere('tower', '');
-                            return;
-                        }
+                if (trim((string) $payload['tower']) === '' || trim((string) $payload['number']) === '') {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: Torre o número faltante.";
+                    continue;
+                }
 
-                        $query->where('tower', $tower);
-                    })
-                    ->first();
+                $unitKey = $this->buildCsvUnitKey((string) $payload['tower'], (string) $payload['number']);
+                $apartment = $apartmentsByUnit[$unitKey] ?? null;
+                $unitType = $this->resolveResidentImportUnitType($payload['unit_type_name'], $unitTypesByName);
 
                 if (! $apartment) {
-                    $failed++;
-                    $errors[] = "Fila {$rowNumber}: no existe un inmueble con torre '{$payload['tower']}' y numero '{$payload['number']}' en el condominio activo.";
-                    continue;
+                    if (! $autoCreateUnits) {
+                        $failed++;
+                        $errors[] = "Fila {$rowNumber}: Unidad {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])} no existe.";
+                        continue;
+                    }
+
+                    if (! $unitType) {
+                        $failed++;
+                        $errors[] = "Fila {$rowNumber}: Tipo de inmueble \"{$payload['unit_type_name']}\" no existe en catálogos.";
+                        continue;
+                    }
+
+                    if (! $unitType->canHaveResidents() || $unitType->needsParentApartment()) {
+                        $failed++;
+                        $errors[] = "Fila {$rowNumber}: Tipo de inmueble inválido: {$payload['unit_type_name']} no permite residentes directos.";
+                        continue;
+                    }
+
+                    $apartment = Apartment::query()->create([
+                        'condominium_id' => $activeCondominiumId,
+                        'unit_type_id' => $unitType->id,
+                        'tower' => trim((string) $payload['tower']) ?: null,
+                        'number' => trim((string) $payload['number']),
+                        'floor' => null,
+                        'is_active' => true,
+                    ])->fresh(['unitType:id,name,allows_residents,requires_parent']);
+                    $apartmentsByUnit[$unitKey] = $apartment;
+                    $createdUnits++;
+                    $warnings[] = "Fila {$rowNumber}: Unidad {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])} fue creada automáticamente.";
                 }
 
                 if (! $apartment->isPrimaryApartment()) {
                     $failed++;
-                    $errors[] = "Fila {$rowNumber}: el inmueble '{$payload['number']}' no permite registrar residentes directos.";
+                    $errors[] = "Fila {$rowNumber}: Unidad {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])} no permite registrar residentes directos.";
                     continue;
                 }
 
@@ -692,8 +781,20 @@ class ResidentController extends Controller
                 if ($payloadUnitTypeName !== '') {
                     $actualUnitTypeName = $this->normalizeUnitTypeNameForComparison((string) $apartment->unitType?->name);
                     if ($payloadUnitTypeName !== $actualUnitTypeName) {
+                        $warnings[] = "Fila {$rowNumber}: Tipo de inmueble no coincide para {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])}. CSV: {$payload['unit_type_name']}. Registrado: " . ($apartment->unitType?->name ?: '-');
+                    }
+                }
+
+                if ($payload['type'] === 'arrendatario') {
+                    $payload = $this->resolveImportedTenantOwnerReference(
+                        payload: $payload,
+                        apartment: $apartment,
+                        csvOwnerNamesByUnit: $csvOwnerNamesByUnit
+                    );
+
+                    if (mb_strlen(trim((string) $payload['property_owner_full_name'])) < 3) {
                         $failed++;
-                        $errors[] = "Fila {$rowNumber}: el tipo de inmueble no coincide con la unidad encontrada.";
+                        $errors[] = "Fila {$rowNumber}: property_owner_full_name es obligatorio para arrendatarios cuando la unidad no tiene una fila o residente propietario.";
                         continue;
                     }
                 }
@@ -711,7 +812,7 @@ class ResidentController extends Controller
                     (int) $existingUserByDocument->id !== (int) $existingUserByEmail->id
                 ) {
                     $failed++;
-                    $errors[] = "Fila {$rowNumber}: el documento y el correo pertenecen a usuarios diferentes.";
+                    $errors[] = "Fila {$rowNumber}: Documento ya existe: {$payload['document_number']}; Email ya existe: {$payload['email']}. Pertenecen a personas diferentes.";
                     continue;
                 }
 
@@ -741,7 +842,11 @@ class ResidentController extends Controller
                     $validationRules['document_number'][] = 'unique:users,document_number';
                 }
 
-                $validator = validator($payload, $validationRules);
+                $validator = validator($payload, $validationRules, [
+                    'document_number.unique' => "Documento ya existe: {$payload['document_number']}.",
+                    'email.unique' => "Email ya existe: {$payload['email']}.",
+                    'type.in' => 'Tipo de residente inválido.',
+                ]);
 
                 if ($validator->fails()) {
                     $failed++;
@@ -751,6 +856,20 @@ class ResidentController extends Controller
 
                 try {
                     $wasUpdated = false;
+                    $existingResident = $existingUser
+                        ? Resident::query()
+                            ->where('user_id', $existingUser->id)
+                            ->where('apartment_id', $apartment->id)
+                            ->first()
+                        : null;
+
+                    if ($payload['type'] === 'propietario' && $payload['is_active']) {
+                        $this->ensureSingleActiveOwnerForApartment(
+                            apartmentId: $apartment->id,
+                            activeCondominiumId: $activeCondominiumId,
+                            excludeResidentId: $existingResident?->id
+                        );
+                    }
 
                     DB::transaction(function () use ($payload, $apartment, &$wasUpdated): void {
                         $user = $this->resolveOrCreateUser($payload);
@@ -796,16 +915,503 @@ class ResidentController extends Controller
                     } else {
                         $created++;
                     }
-                } catch (\Throwable) {
+                } catch (ValidationException $exception) {
                     $failed++;
-                    $errors[] = "Fila {$rowNumber}: no fue posible crear o actualizar el residente.";
+                    $errors[] = "Fila {$rowNumber}: " . $this->resolveImportValidationExceptionMessage($exception, $payload);
+                } catch (QueryException $exception) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . $this->resolveImportQueryExceptionMessage($exception, $payload);
+                } catch (\Throwable $exception) {
+                    $failed++;
+                    $errors[] = "Fila {$rowNumber}: " . $this->resolveImportThrowableMessage($exception);
                 }
             }
         } finally {
             fclose($handle);
         }
 
-        return [$created, $updated, $failed, $errors];
+        return [$created, $updated, $failed, $errors, $warnings, $createdUnits];
+    }
+
+    private function previewImportCsvFile(
+        UploadedFile $file,
+        int $activeCondominiumId,
+        bool $autoCreateUnits = false
+    ): array {
+        [$columnIndex, $dataRows] = $this->readResidentCsvRows($file);
+        $csvOwnerNamesByUnit = $this->buildCsvOwnerNamesByUnit($dataRows, $columnIndex);
+        $unitTypesByName = $this->loadResidentImportUnitTypesByName($activeCondominiumId);
+        $apartmentsByUnit = $this->loadResidentImportApartmentsByUnit($activeCondominiumId);
+        $seenDocuments = [];
+        $seenEmails = [];
+        $virtualUnits = [];
+
+        $summary = [
+            'total_rows' => 0,
+            'valid_rows' => 0,
+            'error_rows' => 0,
+            'new_units' => 0,
+            'residents_to_create' => 0,
+            'residents_to_update' => 0,
+        ];
+        $errors = [];
+        $warnings = [];
+        $unitsToCreate = [];
+        $rows = [];
+
+        foreach ($dataRows as $dataRow) {
+            $rowNumber = (int) $dataRow['rowNumber'];
+            $row = $dataRow['row'];
+
+            if (! is_array($row) || $this->isCsvRowEmpty($row)) {
+                continue;
+            }
+
+            $summary['total_rows']++;
+            $rowErrors = [];
+            $rowWarnings = [];
+            $payload = null;
+
+            try {
+                $payload = [
+                    'full_name' => $this->csvValue($row, $columnIndex, 'nombre_completo'),
+                    'email' => Str::lower($this->csvValue($row, $columnIndex, 'email')),
+                    'document_number' => $this->csvValue($row, $columnIndex, 'documento'),
+                    'phone' => $this->csvValue($row, $columnIndex, 'celular'),
+                    'birth_date' => $this->normalizeCsvDate(
+                        $this->csvValue($row, $columnIndex, 'fecha_nacimiento'),
+                        'fecha_nacimiento'
+                    ),
+                    'type' => $this->normalizeResidentType($this->csvValue($row, $columnIndex, 'tipo_residente')),
+                    'unit_type_name' => $this->csvValue($row, $columnIndex, 'tipo_inmueble'),
+                    'tower' => $this->csvValue($row, $columnIndex, 'torre'),
+                    'number' => $this->csvValue($row, $columnIndex, 'numero'),
+                    'is_active' => $this->normalizeBooleanCsvValue($this->csvValue($row, $columnIndex, 'activo'), 'activo'),
+                    'administration_fee' => $this->normalizeOptionalCsvNumeric(
+                        $this->csvValue($row, $columnIndex, 'administration_fee'),
+                        'administration_fee'
+                    ),
+                    'administration_due_day' => $this->normalizeOptionalCsvDueDay(
+                        $this->csvValue($row, $columnIndex, 'administration_due_day'),
+                        'administration_due_day'
+                    ),
+                    'property_owner_full_name' => $this->csvValue($row, $columnIndex, 'property_owner_full_name'),
+                    'property_owner_document_number' => $this->csvValue($row, $columnIndex, 'property_owner_document_number'),
+                    'property_owner_email' => Str::lower($this->csvValue($row, $columnIndex, 'property_owner_email')),
+                    'property_owner_phone' => $this->csvValue($row, $columnIndex, 'property_owner_phone'),
+                    'property_owner_birth_date' => $this->normalizeCsvDate(
+                        $this->csvValue($row, $columnIndex, 'property_owner_birth_date'),
+                        'property_owner_birth_date'
+                    ),
+                ];
+            } catch (ValidationException $exception) {
+                $rowErrors[] = $this->firstValidationError($exception);
+            }
+
+            if ($payload) {
+                if (trim((string) $payload['tower']) === '' || trim((string) $payload['number']) === '') {
+                    $rowErrors[] = 'Torre o número faltante.';
+                }
+
+                if (isset($seenDocuments[$payload['document_number']])) {
+                    $rowErrors[] = "Documento duplicado en CSV: {$payload['document_number']}.";
+                }
+                $seenDocuments[$payload['document_number']] = true;
+
+                if (isset($seenEmails[$payload['email']])) {
+                    $rowErrors[] = "Email duplicado en CSV: {$payload['email']}.";
+                }
+                $seenEmails[$payload['email']] = true;
+
+                $unitKey = $this->buildCsvUnitKey((string) $payload['tower'], (string) $payload['number']);
+                $apartment = $apartmentsByUnit[$unitKey] ?? null;
+                $unitType = $this->resolveResidentImportUnitType($payload['unit_type_name'], $unitTypesByName);
+                $unitLabel = $this->formatImportedUnitLabel((string) $payload['tower'], (string) $payload['number']);
+
+                if (! $apartment && $unitKey !== '') {
+                    if (! $unitType) {
+                        $rowErrors[] = "Tipo de inmueble \"{$payload['unit_type_name']}\" no existe en catálogos.";
+                    } elseif (! $unitType->canHaveResidents() || $unitType->needsParentApartment()) {
+                        $rowErrors[] = "Tipo de inmueble inválido: {$payload['unit_type_name']} no permite residentes directos.";
+                    } else {
+                        if (! isset($virtualUnits[$unitKey])) {
+                            $virtualUnits[$unitKey] = true;
+                            $unitsToCreate[] = [
+                                'tower' => $payload['tower'],
+                                'number' => $payload['number'],
+                                'unit_type' => $unitType->name,
+                            ];
+                        }
+
+                        if ($autoCreateUnits) {
+                            $rowWarnings[] = "Unidad {$unitLabel} será creada automáticamente.";
+                        } else {
+                            $rowErrors[] = "Unidad {$unitLabel} no existe.";
+                            $rowWarnings[] = "Unidad {$unitLabel} puede ser creada automáticamente.";
+                        }
+                    }
+                } elseif ($apartment) {
+                    if (! $apartment->isPrimaryApartment()) {
+                        $rowErrors[] = "Unidad {$unitLabel} no permite registrar residentes directos.";
+                    }
+
+                    $payloadUnitTypeName = $this->normalizeUnitTypeNameForComparison($payload['unit_type_name']);
+                    $actualUnitTypeName = $this->normalizeUnitTypeNameForComparison((string) $apartment->unitType?->name);
+                    if ($payloadUnitTypeName !== '' && $payloadUnitTypeName !== $actualUnitTypeName) {
+                        $rowWarnings[] = "Tipo de inmueble no coincide. CSV: {$payload['unit_type_name']}. Registrado: " . ($apartment->unitType?->name ?: '-');
+                    }
+                }
+
+                if ($payload['type'] === 'arrendatario') {
+                    $resolvedPayload = $apartment
+                        ? $this->resolveImportedTenantOwnerReference($payload, $apartment, $csvOwnerNamesByUnit)
+                        : $payload;
+                    $csvOwnerName = trim((string) ($csvOwnerNamesByUnit[$unitKey] ?? ''));
+                    if (
+                        trim((string) $resolvedPayload['property_owner_full_name']) === ''
+                        && $csvOwnerName === ''
+                    ) {
+                        $rowErrors[] = 'property_owner_full_name es obligatorio para arrendatarios cuando la unidad no tiene una fila o residente propietario.';
+                    }
+                }
+
+                $existingUserByDocument = $payload['document_number'] !== ''
+                    ? User::query()->where('document_number', $payload['document_number'])->first()
+                    : null;
+                $existingUserByEmail = $payload['email'] !== ''
+                    ? User::query()->where('email', $payload['email'])->first()
+                    : null;
+
+                if (
+                    $existingUserByDocument &&
+                    $existingUserByEmail &&
+                    (int) $existingUserByDocument->id !== (int) $existingUserByEmail->id
+                ) {
+                    $rowErrors[] = "Documento ya existe: {$payload['document_number']}; Email ya existe: {$payload['email']}. Pertenecen a personas diferentes.";
+                }
+
+                $existingUser = $existingUserByDocument ?: $existingUserByEmail;
+                if ($payload['type'] === 'propietario' && $payload['is_active'] && $apartment) {
+                    $existingResident = $existingUser
+                        ? Resident::query()
+                            ->where('user_id', $existingUser->id)
+                            ->where('apartment_id', $apartment->id)
+                            ->first()
+                        : null;
+                    $alreadyHasActiveOwner = Resident::query()
+                        ->where('apartment_id', $apartment->id)
+                        ->where('type', 'propietario')
+                        ->where('is_active', true)
+                        ->when(
+                            $existingResident !== null,
+                            fn ($query) => $query->where('id', '!=', $existingResident->id)
+                        )
+                        ->exists();
+
+                    if ($alreadyHasActiveOwner) {
+                        $rowWarnings[] = "Unidad {$unitLabel} ya tiene propietario activo y se está cargando otro.";
+                        $rowErrors[] = "Unidad {$unitLabel} ya tiene propietario activo.";
+                    }
+                }
+
+                if (empty($rowErrors)) {
+                    $existingResident = ($existingUser && $apartment)
+                        ? Resident::query()
+                            ->where('user_id', $existingUser->id)
+                            ->where('apartment_id', $apartment->id)
+                            ->first()
+                        : null;
+                    if ($existingResident) {
+                        $summary['residents_to_update']++;
+                    } else {
+                        $summary['residents_to_create']++;
+                    }
+                }
+            }
+
+            if ($rowErrors) {
+                $summary['error_rows']++;
+                foreach ($rowErrors as $message) {
+                    $errors[] = "Fila {$rowNumber}: {$message}";
+                }
+            } else {
+                $summary['valid_rows']++;
+            }
+
+            foreach ($rowWarnings as $message) {
+                $warnings[] = "Fila {$rowNumber}: {$message}";
+            }
+
+            $rows[] = [
+                'row' => $rowNumber,
+                'unit' => $payload ? $this->formatImportedUnitLabel((string) $payload['tower'], (string) $payload['number']) : '-',
+                'resident' => $payload['full_name'] ?? '-',
+                'status' => $rowErrors ? 'error' : 'valid',
+                'errors' => $rowErrors,
+                'warnings' => $rowWarnings,
+            ];
+        }
+
+        $summary['new_units'] = count($unitsToCreate);
+
+        return [
+            'summary' => $summary,
+            'errors' => $errors,
+            'warnings' => $warnings,
+            'units_to_create' => array_values($unitsToCreate),
+            'rows' => $rows,
+            'can_import' => $summary['error_rows'] === 0,
+            'auto_create_units' => $autoCreateUnits,
+        ];
+    }
+
+    private function readResidentCsvRows(UploadedFile $file): array
+    {
+        $handle = fopen($file->getRealPath(), 'rb');
+
+        if (! $handle) {
+            throw ValidationException::withMessages([
+                'file' => ['No fue posible abrir el archivo CSV.'],
+            ]);
+        }
+
+        try {
+            $this->skipUtf8Bom($handle);
+            $delimiter = $this->detectCsvDelimiter($handle);
+            $header = fgetcsv($handle, 0, $delimiter);
+
+            if (! is_array($header)) {
+                throw ValidationException::withMessages([
+                    'file' => ['El archivo CSV esta vacio o no tiene encabezados validos.'],
+                ]);
+            }
+
+            $normalizedHeader = array_map([$this, 'normalizeCsvHeader'], $header);
+            $requiredColumns = [
+                'nombre_completo',
+                'email',
+                'documento',
+                'celular',
+                'fecha_nacimiento',
+                'tipo_residente',
+                'tipo_inmueble',
+                'torre',
+                'numero',
+                'activo',
+            ];
+
+            foreach ($requiredColumns as $requiredColumn) {
+                if (! in_array($requiredColumn, $normalizedHeader, true)) {
+                    throw ValidationException::withMessages([
+                        'file' => ['El archivo debe incluir todas las columnas requeridas para residentes.'],
+                    ]);
+                }
+            }
+
+            $dataRows = [];
+            $rowNumber = 1;
+
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rowNumber++;
+                $dataRows[] = [
+                    'rowNumber' => $rowNumber,
+                    'row' => $row,
+                ];
+            }
+
+            return [array_flip($normalizedHeader), $dataRows];
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    private function loadResidentImportUnitTypesByName(int $activeCondominiumId): array
+    {
+        return UnitType::query()
+            ->where('condominium_id', $activeCondominiumId)
+            ->where('is_active', true)
+            ->get()
+            ->mapWithKeys(
+                fn (UnitType $unitType) => [
+                    $this->normalizeUnitTypeNameForComparison((string) $unitType->name) => $unitType,
+                ]
+            )
+            ->all();
+    }
+
+    private function loadResidentImportApartmentsByUnit(int $activeCondominiumId): array
+    {
+        return Apartment::query()
+            ->with('unitType:id,name,allows_residents,requires_parent')
+            ->where('condominium_id', $activeCondominiumId)
+            ->get()
+            ->mapWithKeys(
+                fn (Apartment $apartment) => [
+                    $this->buildCsvUnitKey((string) $apartment->tower, (string) $apartment->number) => $apartment,
+                ]
+            )
+            ->all();
+    }
+
+    private function resolveResidentImportUnitType(string $unitTypeName, array $unitTypesByName): ?UnitType
+    {
+        $normalized = $this->normalizeUnitTypeNameForComparison($unitTypeName);
+        if ($normalized === '') {
+            return null;
+        }
+
+        return $unitTypesByName[$normalized] ?? null;
+    }
+
+    private function firstValidationError(ValidationException $exception): string
+    {
+        $message = collect($exception->errors())->flatten()->first();
+
+        return $message ? (string) $message : 'Datos inválidos para esta fila.';
+    }
+
+    private function resolveImportValidationExceptionMessage(ValidationException $exception, array $payload): string
+    {
+        $message = $this->firstValidationError($exception);
+
+        if (str_contains($message, 'ya tiene un propietario registrado')) {
+            return "Unidad {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])} ya tiene propietario activo.";
+        }
+
+        return $message;
+    }
+
+    private function resolveImportQueryExceptionMessage(QueryException $exception, array $payload): string
+    {
+        $message = Str::of($exception->getMessage())->lower()->ascii()->value();
+
+        if ((string) $exception->getCode() === '23000') {
+            if (str_contains($message, 'document_number')) {
+                return "Documento ya existe: {$payload['document_number']}.";
+            }
+
+            if (str_contains($message, 'email')) {
+                return "Email ya existe: {$payload['email']}.";
+            }
+
+            if (str_contains($message, 'user_id') && str_contains($message, 'apartment_id')) {
+                return "El residente {$payload['document_number']} ya esta asociado a la unidad {$this->formatImportedUnitLabel($payload['tower'], $payload['number'])}.";
+            }
+
+            return 'Registro duplicado en base de datos.';
+        }
+
+        return 'Error de base de datos al guardar la fila.';
+    }
+
+    private function resolveImportThrowableMessage(\Throwable $exception): string
+    {
+        $message = trim($exception->getMessage());
+
+        return $message !== '' ? $message : 'No fue posible crear o actualizar el residente.';
+    }
+
+    private function formatImportedUnitLabel(string $tower, string $number): string
+    {
+        $normalizedTower = trim($tower);
+        $normalizedNumber = trim($number);
+
+        if ($normalizedTower !== '' && $normalizedNumber !== '') {
+            return "Torre {$normalizedTower} - {$normalizedNumber}";
+        }
+
+        if ($normalizedNumber !== '') {
+            return $normalizedNumber;
+        }
+
+        return 'sin número';
+    }
+
+    private function buildCsvOwnerNamesByUnit(array $dataRows, array $columnIndex): array
+    {
+        $ownersByUnit = [];
+
+        foreach ($dataRows as $dataRow) {
+            $row = $dataRow['row'] ?? null;
+            if (! is_array($row) || $this->isCsvRowEmpty($row)) {
+                continue;
+            }
+
+            try {
+                $type = $this->normalizeResidentType($this->csvValue($row, $columnIndex, 'tipo_residente'));
+            } catch (ValidationException) {
+                continue;
+            }
+
+            if ($type !== 'propietario') {
+                continue;
+            }
+
+            $ownerName = trim($this->csvValue($row, $columnIndex, 'nombre_completo'));
+            if ($ownerName === '') {
+                continue;
+            }
+
+            $unitKey = $this->buildCsvUnitKey(
+                $this->csvValue($row, $columnIndex, 'torre'),
+                $this->csvValue($row, $columnIndex, 'numero')
+            );
+
+            if ($unitKey !== '' && ! isset($ownersByUnit[$unitKey])) {
+                $ownersByUnit[$unitKey] = $ownerName;
+            }
+        }
+
+        return $ownersByUnit;
+    }
+
+    private function resolveImportedTenantOwnerReference(
+        array $payload,
+        Apartment $apartment,
+        array $csvOwnerNamesByUnit
+    ): array {
+        if (trim((string) $payload['property_owner_full_name']) !== '') {
+            return $payload;
+        }
+
+        $unitKey = $this->buildCsvUnitKey(
+            (string) $payload['tower'],
+            (string) $payload['number']
+        );
+        $csvOwnerName = trim((string) ($csvOwnerNamesByUnit[$unitKey] ?? ''));
+
+        if ($csvOwnerName !== '') {
+            $payload['property_owner_full_name'] = $csvOwnerName;
+            return $payload;
+        }
+
+        $apartment->loadMissing('residents.user');
+        $existingOwnerName = $apartment->resolveOwnerName();
+        if ($existingOwnerName !== Apartment::OWNER_FALLBACK_LABEL) {
+            $payload['property_owner_full_name'] = $existingOwnerName;
+        }
+
+        return $payload;
+    }
+
+    private function buildCsvUnitKey(string $tower, string $number): string
+    {
+        $normalizedTower = Str::of($tower)
+            ->lower()
+            ->ascii()
+            ->replaceMatches('/\s+/', '')
+            ->value();
+        $normalizedNumber = Str::of($number)
+            ->lower()
+            ->ascii()
+            ->replaceMatches('/\s+/', '')
+            ->value();
+
+        if ($normalizedNumber === '') {
+            return '';
+        }
+
+        return $normalizedTower . '|' . $normalizedNumber;
     }
 
     private function skipUtf8Bom($handle): void
@@ -949,7 +1555,7 @@ class ResidentController extends Controller
             'propietario', 'propietaria' => 'propietario',
             'arrendatario', 'arrendataria', 'inquilino', 'inquilina' => 'arrendatario',
             default => throw ValidationException::withMessages([
-                'tipo_residente' => ["El tipo_residente '{$value}' no es valido. Valores permitidos: propietario o arrendatario."],
+                'tipo_residente' => ["Tipo de residente inválido: {$value}."],
             ]),
         };
     }
