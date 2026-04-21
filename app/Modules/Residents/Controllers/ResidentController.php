@@ -163,6 +163,13 @@ class ResidentController extends Controller
             (int) $validated['apartment_id'],
             $activeCondominiumId
         );
+        $resolvedIsActive = (bool) ($validated['is_active'] ?? true);
+        if ((string) $validated['type'] === 'propietario' && $resolvedIsActive) {
+            $this->ensureSingleActiveOwnerForApartment(
+                apartmentId: $apartment->id,
+                activeCondominiumId: $activeCondominiumId
+            );
+        }
 
         try {
             $resident = DB::transaction(function () use ($validated, $apartment) {
@@ -245,8 +252,21 @@ class ResidentController extends Controller
         $validated = $this->normalizeResidentExtendedFields($validated, $resolvedType);
         $this->ensureRequiredOwnerFieldsForArrendatario($validated, $resident, $resolvedType);
 
+        $targetApartmentId = (int) ($validated['apartment_id'] ?? $resident->apartment_id);
         if (isset($validated['apartment_id'])) {
-            $this->resolvePrimaryApartmentInActiveCondominium((int) $validated['apartment_id'], $activeCondominiumId);
+            $targetApartment = $this->resolvePrimaryApartmentInActiveCondominium(
+                (int) $validated['apartment_id'],
+                $activeCondominiumId
+            );
+            $targetApartmentId = (int) $targetApartment->id;
+        }
+        $resolvedIsActive = (bool) ($validated['is_active'] ?? $resident->is_active);
+        if ($resolvedType === 'propietario' && $resolvedIsActive) {
+            $this->ensureSingleActiveOwnerForApartment(
+                apartmentId: $targetApartmentId,
+                activeCondominiumId: $activeCondominiumId,
+                excludeResidentId: $resident->id
+            );
         }
 
         try {
@@ -367,6 +387,29 @@ class ResidentController extends Controller
         }
 
         return $apartment;
+    }
+
+    private function ensureSingleActiveOwnerForApartment(
+        int $apartmentId,
+        int $activeCondominiumId,
+        ?int $excludeResidentId = null
+    ): void {
+        $alreadyHasActiveOwner = Resident::query()
+            ->where('apartment_id', $apartmentId)
+            ->where('type', 'propietario')
+            ->where('is_active', true)
+            ->whereHas('apartment', fn ($query) => $query->where('condominium_id', $activeCondominiumId))
+            ->when(
+                $excludeResidentId !== null,
+                fn ($query) => $query->where('id', '!=', $excludeResidentId)
+            )
+            ->exists();
+
+        if ($alreadyHasActiveOwner) {
+            throw ValidationException::withMessages([
+                'type' => ['Este inmueble ya tiene un propietario registrado'],
+            ]);
+        }
     }
 
     private function resolveOrCreateUser(array $validated): User
