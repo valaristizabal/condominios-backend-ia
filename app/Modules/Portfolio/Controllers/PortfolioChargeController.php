@@ -401,11 +401,18 @@ class PortfolioChargeController extends Controller
             ? now()->startOfMonth()->toDateString()
             : (string) $periodFilter['period'];
 
+        $ownerNamesByApartment = Resident::query()
+            ->join('users', 'users.id', '=', 'residents.user_id')
+            ->join('apartments', 'apartments.id', '=', 'residents.apartment_id')
+            ->where('apartments.condominium_id', $activeCondominiumId)
+            ->where('residents.type', 'propietario')
+            ->where('residents.is_active', true)
+            ->groupBy('residents.apartment_id')
+            ->selectRaw('residents.apartment_id, MIN(users.full_name) as owner_name')
+            ->pluck('owner_name', 'residents.apartment_id');
+
         $apartments = Apartment::query()
-            ->with([
-                'unitType:id,name,allows_residents,requires_parent',
-                'residents.user:id,full_name',
-            ])
+            ->select(['id', 'tower', 'number', 'unit_type_id'])
             ->where('condominium_id', $activeCondominiumId)
             ->whereHas('unitType', fn ($query) => $query->where('allows_residents', true))
             ->orderBy('tower')
@@ -415,23 +422,17 @@ class PortfolioChargeController extends Controller
         $chargesByApartment = PortfolioCharge::query()
             ->where('condominium_id', $activeCondominiumId)
             ->whereDate('period', $period)
-            ->get()
+            ->get(['id', 'apartment_id'])
             ->keyBy('apartment_id');
 
-        $rows = $apartments->map(function (Apartment $apartment) use ($chargesByApartment) {
+        $rows = $apartments->map(function (Apartment $apartment) use ($chargesByApartment, $ownerNamesByApartment) {
             $charge = $chargesByApartment->get($apartment->id);
 
             return [
-                'value' => (string) $apartment->id,
-                'label' => $this->formatApartmentOptionLabel($apartment),
-                'unit' => $this->formatApartmentLabel($apartment),
-                'owner' => $this->resolveApartmentOwnerName($apartment),
-                'charge_id' => $charge?->id,
-                'amount_total' => $charge ? (float) $charge->amount_total : null,
-                'amount_paid' => $charge ? (float) $charge->amount_paid : null,
-                'balance' => $charge ? (float) $charge->balance : null,
-                'due_date' => $charge?->due_date?->toDateString(),
-                'status' => $charge?->status,
+                'apartment_id' => (int) $apartment->id,
+                'unit_label' => $this->formatApartmentOptionLabel($apartment),
+                'owner_name' => (string) ($ownerNamesByApartment->get($apartment->id) ?? '-'),
+                'charge_id' => $charge?->id ? (int) $charge->id : null,
             ];
         })->values();
 
